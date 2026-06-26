@@ -293,16 +293,46 @@ hr.div{border:none;border-top:1px solid var(--border);margin:14px 0;}
 #offlineBanner{display:none;position:fixed;bottom:0;left:0;right:0;background:#1e293b;color:white;text-align:center;padding:8px;font-size:12.5px;font-weight:600;z-index:500;}
 #offlineBanner.show{display:block;}
 
-/* ── RESPONSIVE ── */
+/* ── RESPONSIVE / MOBILE ── */
 @media(max-width:768px){
-  .sidebar{transform:translateX(-100%);}
+  .sidebar{transform:translateX(-100%);z-index:300;}
   .sidebar.open{transform:translateX(0);}
+  .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:299;backdrop-filter:blur(2px);}
+  .sidebar-overlay.show{display:block;}
   .main{margin-left:0;}
   .stats-grid{grid-template-columns:1fr 1fr;}
   .grid-2,.grid-3{grid-template-columns:1fr;}
-  .content{padding:14px 16px;}
-  .topbar{padding:0 16px;}
+  .content{padding:12px 14px 80px;}
+  .topbar{padding:0 14px;}
+  #menuBtn{display:block!important;}
+  .big-clock{font-size:34px;}
+  .punch-btn{width:96px;height:96px;}
+  .table-wrap{border-radius:0;}
+  th,td{padding:8px 10px;}
+  .modal{width:96%;margin:0 auto;}
+  .grid-2 .modal-body,.grid-3{grid-template-columns:1fr;}
+  .modal-body .grid-2{grid-template-columns:1fr;}
+  .stat-value{font-size:22px;}
+  /* Bottom nav for employees on mobile */
+  .mobile-bottom-nav{display:flex;}
 }
+@media(min-width:769px){
+  .mobile-bottom-nav{display:none!important;}
+  .sidebar-overlay{display:none!important;}
+}
+/* ── MOBILE BOTTOM NAV ── */
+.mobile-bottom-nav{
+  position:fixed;bottom:0;left:0;right:0;height:60px;
+  background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border-top:1px solid var(--glass-border);z-index:200;
+  display:none;align-items:center;justify-content:space-around;padding:0 8px;
+}
+.mbn-item{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 14px;border-radius:10px;cursor:pointer;border:none;background:none;color:var(--text-mid);font-size:10px;font-weight:600;transition:all .15s;}
+.mbn-item.active{color:var(--blue);}
+.mbn-item svg{width:20px;height:20px;}
+/* ── LIVE TICKER ANIMATION ── */
+@keyframes tickPulse{0%,100%{opacity:1;}50%{opacity:.6;}}
+.live-pulse{animation:tickPulse 2s ease-in-out infinite;}
 </style>
 </head>
 <body>
@@ -345,6 +375,7 @@ hr.div{border:none;border-top:1px solid var(--border);margin:14px 0;}
 
 <!-- ════════════ APP ════════════ -->
 <div id="appPage" style="display:none;">
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
 <div class="app">
 
   <nav class="sidebar" id="sidebar">
@@ -385,7 +416,7 @@ hr.div{border:none;border-top:1px solid var(--border);margin:14px 0;}
   <div class="main">
     <div class="topbar">
       <div class="flex">
-        <button onclick="document.getElementById('sidebar').classList.toggle('open')" id="menuBtn" style="display:none;background:none;border:none;cursor:pointer;padding:4px;">
+        <button onclick="toggleSidebar()" id="menuBtn" style="display:none;background:none;border:none;cursor:pointer;padding:4px;">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
         </button>
         <div class="page-title" id="pageTitle">Dashboard</div>
@@ -452,6 +483,7 @@ hr.div{border:none;border-top:1px solid var(--border);margin:14px 0;}
                 </button>
               </div>
               <div id="lastPunchInfo" style="font-size:12px;color:var(--text-light);text-align:center;min-height:18px;"></div>
+              <div id="liveEarnBadge" class="live-pulse" style="font-size:13px;font-weight:700;color:var(--blue);text-align:center;margin-top:6px;min-height:20px;"></div>
             </div>
             <div class="glass-card">
               <div class="card-header"><span class="card-title">GPS Location</span><span class="text-muted" id="gpsAccLabel"></span></div>
@@ -606,6 +638,10 @@ hr.div{border:none;border-top:1px solid var(--border);margin:14px 0;}
     </div><!-- /content -->
   </div><!-- /main -->
 </div><!-- /app -->
+
+<!-- Mobile bottom nav (shown only on small screens) -->
+<div class="mobile-bottom-nav" id="mobileBottomNav"></div>
+
 </div><!-- /appPage -->
 
 <!-- ════════════ MODALS ════════════ -->
@@ -746,6 +782,12 @@ function fbCol(path) {
 // ═══════════════════════════════════════════════
 //  LOAD FROM FIRESTORE
 // ═══════════════════════════════════════════════
+// ── Canonical employee ID resolver ──
+// Always use employeeId field (e.g. "EMP001"); fallback to firestoreId only
+function getEmpId(emp) {
+  return emp?.employeeId || emp?.firestoreId || emp?.id || '';
+}
+
 async function loadAllData() {
   const { db, getDocs, collection, getDoc, doc } = window._fb;
 
@@ -763,6 +805,14 @@ async function loadAllData() {
   try {
     const advSnap = await getDocs(collection(db, 'advances'));
     _advances = advSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
+    // Normalize legacy advances: if empId looks like a name, resolve it to employeeId
+    _advances = _advances.map(a => {
+      if (!a.empId) return a;
+      // Check if empId matches any employee's name (case-insensitive)
+      const byName = _employees.find(e => (e.name||'').toLowerCase().trim() === (a.empId||'').toLowerCase().trim());
+      if (byName) return { ...a, empId: getEmpId(byName), empName: byName.name, empFid: byName.firestoreId };
+      return a;
+    });
   } catch(e) { console.warn('advances load failed:', e.code); }
 
   try {
@@ -1011,6 +1061,29 @@ function buildNav() {
     if (item.sec) return `<div class="nav-sec">${item.sec}</div>`;
     return `<button class="nav-item" id="nav-${item.id}" onclick="navigate('${item.id}')">${ICONS[item.icon]||''}${item.label}</button>`;
   }).join('');
+
+  // Mobile bottom nav — show key pages only
+  const mbnItems = CR === 'admin'
+    ? [
+        {id:'dashboard', icon:'grid', label:'Home'},
+        {id:'att-admin', icon:'cal', label:'Attend.'},
+        {id:'payroll', icon:'wallet', label:'Payroll'},
+        {id:'employees', icon:'users', label:'Staff'},
+        {id:'reports', icon:'chart', label:'Reports'},
+      ]
+    : [
+        {id:'emp-dash', icon:'grid', label:'Home'},
+        {id:'attendance', icon:'pin', label:'Check In'},
+      ];
+  const mbn = document.getElementById('mobileBottomNav');
+  if (mbn) mbn.innerHTML = mbnItems.map(item =>
+    `<button class="mbn-item" id="mbn-${item.id}" onclick="navigate('${item.id}')">${ICONS[item.icon]||''}<span>${item.label}</span></button>`
+  ).join('');
+}
+
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarOverlay').classList.remove('show');
 }
 function updateSidebarUser() {
   if (!CU) return;
@@ -1029,6 +1102,9 @@ function navigate(id) {
   if (pg) pg.classList.add('active');
   const nb = document.getElementById('nav-' + id);
   if (nb) nb.classList.add('active');
+  document.querySelectorAll('.mbn-item').forEach(n => n.classList.remove('active'));
+  const mbnBtn = document.getElementById('mbn-' + id);
+  if (mbnBtn) mbnBtn.classList.add('active');
   document.getElementById('pageTitle').textContent = PAGE_TITLES[id] || id;
   CP = id;
   if (id === 'dashboard')    loadDashboard();
@@ -1040,7 +1116,7 @@ function navigate(id) {
   else if (id === 'settings')  loadSettings();
   else if (id === 'attendance') initAttPage();
   else if (id === 'emp-dash')  loadEmpDash();
-  if (window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('open');
+  if (window.innerWidth <= 768) closeSidebar();
 }
 
 // ═══════════════════════════════════════════════
@@ -1081,7 +1157,7 @@ function loadDashboard() {
 
   let listH = '';
   active.slice(0, 8).forEach(emp => {
-    const eid = emp.employeeId || emp.id;
+    const eid = getEmpId(emp);
     const rec = todayAtt.find(a => a.empId === eid);
     const badge = rec ? (rec.status === 'late' ? '<span class="badge bg-amber">Late</span>' : '<span class="badge bg-green">Present</span>') : '<span class="badge bg-red">Absent</span>';
     listH += `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
@@ -1097,9 +1173,9 @@ function loadDashboard() {
   const s = gs();
   active.forEach(emp => {
     totalBase += (emp.salary || 0) * s.workDays;
-    const ot = monthAtt.filter(a => a.empId === (emp.employeeId||emp.id)).reduce((sum,a) => sum+(a.overtime||0), 0);
+    const ot = monthAtt.filter(a => a.empId === (getEmpId(emp))).reduce((sum,a) => sum+(a.overtime||0), 0);
     totalOTE += ot * (emp.otRate||0);
-    totalAdv += adv.filter(a => a.empId === (emp.employeeId||emp.id)).reduce((sum,a) => sum+a.amount, 0);
+    totalAdv += adv.filter(a => a.empId === (getEmpId(emp))).reduce((sum,a) => sum+a.amount, 0);
   });
   document.getElementById('dashPayroll').innerHTML = `
     <div class="pay-calc">
@@ -1113,7 +1189,7 @@ function loadDashboard() {
   let actH = '';
   const recent = [...att].sort((a,b) => b.date.localeCompare(a.date)||(b.checkIn||'').localeCompare(a.checkIn||'')).slice(0,6);
   recent.forEach(a => {
-    const emp = emps.find(e => (e.employeeId||e.id) === a.empId);
+    const emp = emps.find(e => (getEmpId(e)) === a.empId);
     actH += `<div style="display:flex;align-items:center;gap:12px;padding:7px 0;border-bottom:1px solid var(--border);">
       <div class="emp-avatar" style="width:28px;height:28px;font-size:10px;background:${emp?.color||'#2563EB'}">${initials(emp?.name||'??')}</div>
       <div style="flex:1;font-size:13px;"><strong>${emp?.name||a.empId}</strong> checked ${a.checkOut?'out at '+a.checkOut:'in at '+a.checkIn}</div>
@@ -1140,7 +1216,7 @@ function renderEmpTable() {
   document.getElementById('empTbody').innerHTML = emps.map(e => `
     <tr>
       <td><div class="flex"><div class="emp-avatar" style="background:${e.color||'#2563EB'}">${initials(e.name)}</div>
-        <div><div style="font-weight:700;font-size:13.5px;">${e.name}</div><div class="text-muted">${e.employeeId||e.id}</div></div></div></td>
+        <div><div style="font-weight:700;font-size:13.5px;">${e.name}</div><div class="text-muted">${getEmpId(e)}</div></div></div></td>
       <td>${e.dept}</td>
       <td><span class="shift-tag ${e.shift==='morning'?'shift-m':'shift-e'}">${e.shift==='morning'?'🌅 Morning':'🌆 Evening'}</span></td>
       <td>₹${fmt(e.salary)}/day</td>
@@ -1240,12 +1316,13 @@ let GPS = null, gpsErr = null, gpsWatchId = null;
 
 function initAttPage() {
   const today = todayStr();
-  const rec = ga().find(a => a.empId === (CU.employeeId||CU.id) && a.date === today);
+  const rec = ga().find(a => a.empId === (getEmpId(CU)) && a.date === today);
   updatePunchBtn(rec);
   loadAttHistory();
   const bd = document.getElementById('bigDate');
   if (bd) bd.textContent = new Date().toLocaleDateString('en-IN', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
   startGPS();
+  startLivePayTicker();
 }
 
 function startGPS() {
@@ -1299,7 +1376,7 @@ function updateGPSUI() {
 
   if (punchBtn) {
     const today = todayStr();
-    const rec = ga().find(a => a.empId === (CU.employeeId||CU.id) && a.date === today);
+    const rec = ga().find(a => a.empId === (getEmpId(CU)) && a.date === today);
     const done = rec?.checkIn && rec?.checkOut;
     punchBtn.disabled = done || !inZone;
   }
@@ -1312,7 +1389,7 @@ async function doPunch() {
   if (d > s.radius) { toast('You are outside the allowed geo-fence area', 'error'); return; }
   const now = new Date(), today = todayStr();
   const timeStr = pad(now.getHours()) + ':' + pad(now.getMinutes());
-  const empId = CU.employeeId || CU.id;
+  const empId = getEmpId(CU);
 
   let rec = ga().find(a => a.empId === empId && a.date === today);
 
@@ -1351,8 +1428,47 @@ async function doPunch() {
     updatePunchBtn(updated);
     updateGPSUI();
     loadAttHistory();
+    startLivePayTicker(); // refresh live earnings
   } catch(e) {
     toast('Punch failed: ' + e.message, 'error');
+  }
+}
+
+// ── Live pay ticker: updates "Earned Today" on check-in page every minute ──
+let _livePayTicker = null;
+function startLivePayTicker() {
+  if (_livePayTicker) clearInterval(_livePayTicker);
+  updateLivePayBadge();
+  _livePayTicker = setInterval(updateLivePayBadge, 60000); // every minute
+}
+function updateLivePayBadge() {
+  const empId = getEmpId(CU);
+  const today = todayStr();
+  const rec   = ga().find(a => a.empId === empId && a.date === today);
+  if (!rec || !rec.checkIn) return;
+  const s = gs();
+  const emp = ge().find(e => getEmpId(e) === empId) || CU;
+  const [sh, sm] = s.shiftStart.split(':').map(Number);
+  const [eh, em] = s.shiftEnd.split(':').map(Number);
+  const shiftHours = Math.max(1, (eh*60+em-(sh*60+sm))/60);
+  const hourlyRate = (emp.salary||0) / shiftHours;
+
+  let hw;
+  if (rec.checkOut) {
+    hw = rec.hoursWorked || 0;
+  } else {
+    // Live: calculate from check-in to NOW
+    const now = new Date();
+    const [ih, im] = rec.checkIn.split(':').map(Number);
+    hw = Math.max(0, (now.getHours()*60+now.getMinutes() - (ih*60+im)) / 60);
+  }
+  const regularHrs = Math.min(hw, shiftHours);
+  const otHrs = Math.max(0, hw - shiftHours);
+  const earned = regularHrs * hourlyRate + otHrs * (emp.otRate||0);
+
+  const el = document.getElementById('liveEarnBadge');
+  if (el) {
+    el.textContent = `₹${fmt(Math.round(earned))} earned · ${hw.toFixed(1)}h`;
   }
 }
 
@@ -1374,10 +1490,11 @@ function updatePunchBtn(rec) {
     if (lbl) lbl.textContent = 'Check In';
     if (info) info.textContent = '';
   }
+  startLivePayTicker();
 }
 
 function loadAttHistory() {
-  const empId = CU.employeeId || CU.id;
+  const empId = getEmpId(CU);
   const att = ga().filter(a => a.empId === empId).sort((a,b) => b.date.localeCompare(a.date)).slice(0, 20);
   document.getElementById('attHistTbody').innerHTML = att.map(a => `
     <tr>
@@ -1395,7 +1512,7 @@ function loadAttHistory() {
 function openManualAttModal() {
   const emps = ge().filter(e => e.status === 'active');
   document.getElementById('maEmpSel').innerHTML = emps.map(e =>
-    `<option value="${e.employeeId||e.id}">${e.name} (${e.employeeId||e.id})</option>`).join('');
+    `<option value="${getEmpId(e)}">${e.name} (${getEmpId(e)})</option>`).join('');
   document.getElementById('maDate').value = document.getElementById('attAdminDate').value || todayStr();
   document.getElementById('maIn').value = '';
   document.getElementById('maOut').value = '';
@@ -1456,7 +1573,7 @@ function loadAdminAtt() {
   const emps  = ge().filter(e => e.status === 'active');
   const present = att.filter(a => a.checkIn);
   const late    = att.filter(a => a.status === 'late');
-  const absent  = emps.filter(e => !att.find(a => a.empId === (e.employeeId||e.id)));
+  const absent  = emps.filter(e => !att.find(a => a.empId === (getEmpId(e))));
   const pct     = emps.length ? Math.round(present.length / emps.length * 100) : 0;
 
   document.getElementById('attAdminStats').innerHTML = `
@@ -1466,7 +1583,7 @@ function loadAdminAtt() {
     <div class="stat-card"><div class="stat-label"><span class="stat-dot sd-blue"></span>Attendance Rate</div><div class="stat-value sv-blue">${pct}%</div></div>`;
 
   document.getElementById('attAdminTbody').innerHTML = emps.map(emp => {
-    const eid = emp.employeeId || emp.id;
+    const eid = getEmpId(emp);
     const rec = att.find(a => a.empId === eid);
     const st  = rec ? (rec.status === 'late' ? 'bg-amber' : 'bg-green') : 'bg-red';
     const stL = rec ? (rec.status === 'late' ? 'Late' : 'Present') : 'Absent';
@@ -1491,7 +1608,7 @@ function exportAttCSV() {
   const emps = ge();
   let rows   = [['Employee ID','Name','Department','Date','Check In','Check Out','Location (Lat,Lng)','Hours Worked','Overtime','Status','Manual Entry']];
   emps.filter(e => e.status === 'active').forEach(emp => {
-    const eid = emp.employeeId || emp.id;
+    const eid = getEmpId(emp);
     const rec = att.find(a => a.empId === eid);
     const loc = rec?.checkInLat ? `${rec.checkInLat},${rec.checkInLng}` : '';
     rows.push([eid, emp.name, emp.dept, date, rec?.checkIn||'Absent', rec?.checkOut||'', loc, rec?.hoursWorked||0, rec?.overtime||0, rec?.status||'absent', rec?.manual?'Yes':'No']);
@@ -1515,9 +1632,18 @@ function buildPayrollMonths() {
 }
 
 function calcPayroll(empId, month) {
-  const emp = ge().find(e => (e.employeeId||e.id) === empId); if (!emp) return null;
-  const att  = ga().filter(a => a.empId === empId && a.date.startsWith(month));
-  const adv  = gadv().filter(a => a.empId === empId && a.month === month);
+  const emp = ge().find(e => getEmpId(e) === empId); if (!emp) return null;
+  const altId = emp.firestoreId;
+  const empName = (emp.name || '').toLowerCase().trim();
+  // Match by employeeId, firestoreId, OR name (covers advances saved with any format)
+  const matchId = (id, rec) =>
+    id === empId ||
+    (altId && id === altId) ||
+    (empName && (id || '').toLowerCase().trim() === empName) ||
+    (rec?.empFid && rec.empFid === altId) ||
+    (rec?.empName && (rec.empName || '').toLowerCase().trim() === empName);
+  const att  = ga().filter(a => matchId(a.empId, a) && a.date.startsWith(month));
+  const adv  = gadv().filter(a => matchId(a.empId, a) && a.month === month);
   const s    = gs();
 
   // Derive hourly rate from per-day rate ÷ shift hours
@@ -1550,7 +1676,7 @@ function loadPayroll() {
   const month = document.getElementById('payrollMonth')?.value || monthStr();
   const emps  = ge().filter(e => e.status === 'active');
   document.getElementById('payrollTbody').innerHTML = emps.map(emp => {
-    const eid = emp.employeeId || emp.id;
+    const eid = getEmpId(emp);
     const p = calcPayroll(eid, month); if (!p) return '';
     const stBadge = p.status === 'paid' ? '<span class="badge bg-green">Paid</span>' : '<span class="badge bg-amber">Pending</span>';
     return `<tr>
@@ -1581,7 +1707,7 @@ async function markPaid(empId, month) {
     await setDoc(doc(db, 'payroll', month), pay[month]);
   } catch(e) { console.warn('Payroll sync error', e); }
   loadPayroll();
-  const emp = ge().find(e => (e.employeeId||e.id) === empId);
+  const emp = ge().find(e => (getEmpId(e)) === empId);
   toast(`${emp?.name||empId} marked as paid`, 'success');
 }
 
@@ -1589,7 +1715,7 @@ async function processAllPayroll() {
   const month = document.getElementById('payrollMonth')?.value || monthStr();
   const emps  = ge().filter(e => e.status === 'active');
   const pay   = gpay(); if (!pay[month]) pay[month] = {};
-  emps.forEach(e => { pay[month][e.employeeId||e.id] = 'paid'; });
+  emps.forEach(e => { pay[month][getEmpId(e)] = 'paid'; });
   _payroll = pay;
   try {
     const { db, doc, setDoc } = window._fb;
@@ -1604,7 +1730,7 @@ function exportPayrollCSV() {
   const emps  = ge().filter(e => e.status === 'active');
   let rows    = [['Employee ID','Name','Department','Days Worked','Base Pay','OT Hours','OT Earnings','Advances','Deductions','Net Pay','Status']];
   emps.forEach(emp => {
-    const eid = emp.employeeId || emp.id;
+    const eid = getEmpId(emp);
     const p   = calcPayroll(eid, month); if (!p) return;
     rows.push([eid, emp.name, emp.dept, p.days, Math.round(p.base), p.totalOT.toFixed(1), Math.round(p.otEarn), p.advTotal, p.deductions, Math.round(p.net), p.status]);
   });
@@ -1623,7 +1749,7 @@ function showSlip(empId, month) {
     </div>
     <div class="slip-grid" style="margin-bottom:16px;">
       <div class="slip-item"><div class="slip-lbl">Employee Name</div><div class="slip-val">${p.emp.name}</div></div>
-      <div class="slip-item"><div class="slip-lbl">Employee ID</div><div class="slip-val">${p.emp.employeeId||p.emp.id}</div></div>
+      <div class="slip-item"><div class="slip-lbl">Employee ID</div><div class="slip-val">${getEmpId(p.emp)}</div></div>
       <div class="slip-item"><div class="slip-lbl">Department</div><div class="slip-val">${p.emp.dept}</div></div>
       <div class="slip-item"><div class="slip-lbl">Phone</div><div class="slip-val">${p.emp.phone||'—'}</div></div>
       <div class="slip-item"><div class="slip-lbl">Days Worked</div><div class="slip-val">${p.days} / ${s.workDays}</div></div>
@@ -1667,13 +1793,13 @@ function printSlip() {
 async function loadAdvances() {
   const adv  = gadv(), emps = ge();
   document.getElementById('advTbody').innerHTML = adv.length ? adv.map(a => {
-    const emp = emps.find(e => (e.employeeId||e.id) === a.empId);
+    const emp = emps.find(e => (getEmpId(e)) === a.empId);
     return `<tr>
       <td style="font-weight:700;">${emp?.name||a.empId}</td>
       <td style="color:var(--danger);font-weight:800;">₹${fmt(a.amount)}</td>
       <td>${a.date}</td><td>${a.reason||'—'}</td>
       <td>${new Date(a.month+'-01').toLocaleDateString('en-IN',{month:'short',year:'numeric'})}</td>
-      <td><span class="badge bg-amber">Pending deduction</span></td>
+      <td><span class="badge bg-blue">Auto-deducted in payroll</span></td>
       <td><button class="btn btn-sm" style="background:#fee2e2;color:var(--danger);" onclick="deleteAdvance('${a.firestoreId||a.id}')">Delete</button></td>
     </tr>`;
   }).join('') : '<tr><td colspan="7" style="text-align:center;padding:28px;color:var(--text-light);">No advance records found.</td></tr>';
@@ -1693,7 +1819,7 @@ async function deleteAdvance(fid) {
 function openAdvModal() {
   const emps = ge().filter(e => e.status === 'active');
   document.getElementById('advEmpSel').innerHTML = emps.map(e =>
-    `<option value="${e.employeeId||e.id}">${e.name} (${e.employeeId||e.id})</option>`).join('');
+    `<option value="${getEmpId(e)}">${e.name} (${getEmpId(e)})</option>`).join('');
   const sel = document.getElementById('advMonth'); sel.innerHTML = '';
   const now = new Date();
   for (let i = -1; i < 4; i++) {
@@ -1707,12 +1833,17 @@ function openAdvModal() {
 }
 
 async function saveAdvance() {
-  const empId  = document.getElementById('advEmpSel').value;
+  const empIdRaw = document.getElementById('advEmpSel').value;
   const amount = parseFloat(document.getElementById('advAmt').value) || 0;
   const month  = document.getElementById('advMonth').value;
   const reason = document.getElementById('advReason').value;
   if (!amount || amount <= 0) { toast('Enter a valid amount', 'error'); return; }
-  const rec = { empId, amount, date: todayStr(), reason, month, status: 'pending', createdAt: new Date().toISOString() };
+  // Find the actual employee to store all IDs for reliable future matching
+  const empObj = ge().find(e => getEmpId(e) === empIdRaw) || ge().find(e => e.name === empIdRaw);
+  const empId  = empObj ? getEmpId(empObj) : empIdRaw;
+  const empName = empObj?.name || '';
+  const empFid  = empObj?.firestoreId || '';
+  const rec = { empId, empName, empFid, amount, date: todayStr(), reason, month, status: 'pending', createdAt: new Date().toISOString() };
   try {
     const { db, addDoc, collection } = window._fb;
     const ref = await addDoc(collection(db, 'advances'), rec);
@@ -1747,7 +1878,7 @@ function showReport(type, el) {
       <div class="flex"><span style="font-size:12px;color:var(--text-light);margin-right:6px;">Click employee to view calendar</span><button class="btn btn-ghost btn-sm" onclick="exportReportCSV('attendance')">Export CSV</button></div>
     </div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Dept</th><th>Present</th><th>Absent</th><th>Late</th><th>Total Hrs</th><th>OT Hrs</th><th>Att %</th></tr></thead><tbody>`;
     emps.forEach(emp => {
-      const eid = emp.employeeId || emp.id;
+      const eid = getEmpId(emp);
       const ea  = att.filter(a => a.empId === eid);
       const present = ea.filter(a => a.checkIn).length;
       const late    = ea.filter(a => a.status === 'late').length;
@@ -1777,7 +1908,7 @@ function showReport(type, el) {
     </div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Dept</th><th>Days / Hrs</th><th>Base Pay</th><th>OT Earn</th><th>Advances</th><th>Net Pay</th><th>Status</th></tr></thead><tbody>`;
     let grandTotal = 0;
     emps.forEach(emp => {
-      const eid = emp.employeeId || emp.id;
+      const eid = getEmpId(emp);
       const p   = calcPayroll(eid, month); if (!p) return;
       grandTotal += p.net;
       rows.push([eid, emp.name, emp.dept, p.days, p.totalHours, Math.round(p.base), p.totalOT.toFixed(1), Math.round(p.otEarn), p.advTotal, Math.round(p.net), p.status]);
@@ -1798,7 +1929,7 @@ function showReport(type, el) {
   } else {
     let html = '<div class="grid-2" style="gap:14px;">';
     emps.forEach(emp => {
-      const eid = emp.employeeId || emp.id;
+      const eid = getEmpId(emp);
       const ea  = att.filter(a => a.empId === eid);
       const present = ea.filter(a => a.checkIn).length;
       const ot  = ea.reduce((sum,a) => sum+(a.overtime||0), 0);
@@ -1824,7 +1955,7 @@ function showReport(type, el) {
 
 // ─── ATTENDANCE CALENDAR ────────────────────────────────────────
 function showEmpCalendar(empId, month) {
-  const emp  = ge().find(e => (e.employeeId||e.id) === empId);
+  const emp  = ge().find(e => (getEmpId(e)) === empId);
   if (!emp) return;
   const att  = ga().filter(a => a.empId === empId && a.date.startsWith(month));
   const cont = document.getElementById('reportContent');
@@ -1947,17 +2078,31 @@ async function saveSettings() {
 // ═══════════════════════════════════════════════
 function loadEmpDash() {
   // Always reload fresh data from Firebase before rendering
-  const empProfile = ge().find(e => (e.employeeId||e.id) === (CU.employeeId||CU.id)) || CU;
+  const empProfile = ge().find(e => getEmpId(e) === getEmpId(CU)) || CU;
   const emp = { ...CU, ...empProfile };
   const month = monthStr(), s = gs();
-  const empId = emp.employeeId || emp.id;
-  const att   = ga().filter(a => a.empId === empId && a.date.startsWith(month));
+  // Use all possible IDs to match advances/attendance (covers mismatched saves)
+  const empId = getEmpId(emp);
+  const empIdAlt = emp.firestoreId;
+  const empName = (emp.name || '').toLowerCase().trim();
+  // Match advances saved with employeeId, firestoreId, OR name (legacy saves)
+  // Also check empName/empFid fields stored on the advance doc itself (new format)
+  const matchEmpId = (id, advRec) => {
+    if (id === empId) return true;
+    if (empIdAlt && (id === empIdAlt)) return true;
+    if (empName && (id || '').toLowerCase().trim() === empName) return true;
+    if (advRec?.empFid && advRec.empFid === empIdAlt) return true;
+    if (advRec?.empName && (advRec.empName || '').toLowerCase().trim() === empName) return true;
+    return false;
+  };
+
+  const att   = ga().filter(a => matchEmpId(a.empId) && a.date.startsWith(month));
   const present = att.filter(a => a.checkIn).length;
   const late    = att.filter(a => a.status === 'late').length;
   const totalOT = att.reduce((sum,a) => sum+(a.overtime||0), 0);
 
-  // Live advance data
-  const adv     = gadv().filter(a => a.empId === empId && a.month === month);
+  // Live advance data — match by any of employee's IDs
+  const adv     = gadv().filter(a => matchEmpId(a.empId, a) && a.month === month);
   const advTotal = adv.reduce((sum,a) => sum+a.amount, 0);
 
   // Hourly rate calculation
@@ -2051,10 +2196,21 @@ window.addEventListener('offline', () => document.getElementById('offlineBanner'
 // ═══════════════════════════════════════════════
 //  RESPONSIVE
 // ═══════════════════════════════════════════════
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  const ov = document.getElementById('sidebarOverlay');
+  const isOpen = sb.classList.toggle('open');
+  ov.classList.toggle('show', isOpen);
+}
 function checkMobile() {
   const mb = document.getElementById('menuBtn');
+  const mbn = document.getElementById('mobileBottomNav');
   if (mb) mb.style.display = window.innerWidth <= 768 ? 'block' : 'none';
-  if (window.innerWidth > 768) document.getElementById('sidebar')?.classList.remove('open');
+  if (mbn) mbn.style.display = window.innerWidth <= 768 ? 'flex' : 'none';
+  if (window.innerWidth > 768) {
+    document.getElementById('sidebar')?.classList.remove('open');
+    document.getElementById('sidebarOverlay')?.classList.remove('show');
+  }
 }
 window.addEventListener('resize', checkMobile);
 checkMobile();
