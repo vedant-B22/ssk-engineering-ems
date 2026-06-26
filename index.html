@@ -1,0 +1,2080 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SSK Engineering — Attendance & Payroll</title>
+
+<!-- ════════════ PWA ════════════ -->
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#2563EB">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="SSK EMS">
+<link rel="apple-touch-icon" href="/icon-192.png">
+
+<!-- ════════════ FIREBASE SDK ════════════ -->
+<script type="module">
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  //  🔧 PASTE YOUR FIREBASE CONFIG HERE
+  //  Get this from: Firebase Console → Project Settings → Your apps
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import {
+    getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc,
+    collection, query, where, getDocs, orderBy, onSnapshot, serverTimestamp
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import {
+    getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged,
+    updatePassword, EmailAuthProvider, reauthenticateWithCredential
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey:            "AIzaSyDxHAaRumDRHXOyuSBa84_nNq5fcUvOsZI",
+    authDomain:        "ssk-database-a5658.firebaseapp.com",
+    projectId:         "ssk-database-a5658",
+    storageBucket:     "ssk-database-a5658.firebasestorage.app",
+    messagingSenderId: "73711925606",
+    appId:             "1:73711925606:web:58b6cad4667503523670a7"
+  };
+
+  const app  = initializeApp(firebaseConfig);
+  const db   = getFirestore(app);
+  const auth = getAuth(app);
+
+  // ── Expose to global scope so the rest of the app can use them ──
+  window._fb = { db, auth, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc,
+    collection, query, where, getDocs, orderBy, onSnapshot, serverTimestamp,
+    signInWithEmailAndPassword, signOut, onAuthStateChanged,
+    updatePassword, EmailAuthProvider, reauthenticateWithCredential };
+
+  // ── Firebase auth state → boot the app ──
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      // Fetch the employee/admin profile linked to this Firebase user
+      await window._loadFirebaseUser(user.uid);
+    } else {
+      window._showLogin();
+    }
+  });
+</script>
+
+<style>
+:root {
+  --blue:#2563EB; --blue-dark:#1d4ed8; --blue-light:#dbeafe;
+  --cyan:#06b6d4; --cyan-light:#cffafe;
+  --slate:#1e293b; --slate-mid:#334155; --slate-light:#64748b;
+  --bg:#f1f5f9; --glass:rgba(255,255,255,0.75); --glass-border:rgba(255,255,255,0.55);
+  --card:rgba(255,255,255,0.88); --shadow:0 4px 24px rgba(37,99,235,0.09);
+  --shadow-lg:0 8px 40px rgba(37,99,235,0.15); --radius:14px; --radius-sm:8px;
+  --danger:#ef4444; --success:#10b981; --warning:#f59e0b;
+  --text:#0f172a; --text-mid:#475569; --text-light:#94a3b8; --border:rgba(37,99,235,0.1);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
+body::before{content:'';position:fixed;inset:0;background:linear-gradient(135deg,#dbeafe 0%,#f8faff 45%,#e0f2fe 100%);z-index:-2;}
+body::after{content:'';position:fixed;top:-300px;right:-300px;width:700px;height:700px;background:radial-gradient(circle,rgba(37,99,235,0.07) 0%,transparent 70%);z-index:-1;pointer-events:none;}
+
+/* ── SIDEBAR ── */
+.app{display:flex;min-height:100vh;}
+.sidebar{width:240px;min-height:100vh;background:var(--glass);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border-right:1px solid var(--glass-border);display:flex;flex-direction:column;position:fixed;top:0;left:0;z-index:100;transition:transform .3s;}
+.sidebar-logo{padding:22px 20px 14px;border-bottom:1px solid var(--border);}
+.logo-mark{display:flex;align-items:center;gap:10px;}
+.logo-icon{width:38px;height:38px;background:var(--blue);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.logo-icon svg{width:22px;height:22px;fill:white;}
+.logo-text{font-size:17px;font-weight:800;color:var(--slate);letter-spacing:-.4px;}
+.logo-sub{font-size:10.5px;color:var(--text-light);margin-top:1px;}
+.sidebar-user{padding:13px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;}
+.u-avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-size:12px;font-weight:700;flex-shrink:0;}
+.u-name{font-size:13px;font-weight:600;color:var(--slate);}
+.u-role{font-size:11px;color:var(--text-light);}
+.sidebar-nav{flex:1;padding:10px 12px;display:flex;flex-direction:column;gap:2px;overflow-y:auto;}
+.nav-sec{font-size:10px;font-weight:700;color:var(--text-light);letter-spacing:.9px;text-transform:uppercase;padding:10px 8px 4px;margin-top:4px;}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-sm);cursor:pointer;font-size:13.5px;color:var(--text-mid);font-weight:500;border:none;background:none;width:100%;text-align:left;transition:all .15s;}
+.nav-item:hover{background:rgba(37,99,235,.07);color:var(--blue);}
+.nav-item.active{background:var(--blue);color:white;}
+.nav-item svg{width:17px;height:17px;flex-shrink:0;opacity:.65;}
+.nav-item.active svg{opacity:1;}
+.sidebar-footer{padding:13px 20px;border-top:1px solid var(--border);}
+.logout-btn{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--danger);cursor:pointer;background:none;border:none;width:100%;padding:5px 0;}
+
+/* ── MAIN ── */
+.main{margin-left:240px;flex:1;display:flex;flex-direction:column;min-height:100vh;}
+.topbar{background:var(--glass);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border-bottom:1px solid var(--glass-border);padding:0 28px;height:58px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;}
+.page-title{font-size:15.5px;font-weight:700;color:var(--slate);}
+.time-badge{background:var(--blue-light);color:var(--blue);font-size:12px;font-weight:700;padding:4px 12px;border-radius:20px;font-variant-numeric:tabular-nums;}
+.content{padding:24px 28px;flex:1;}
+
+/* ── PAGES ── */
+.page{display:none;}.page.active{display:block;}
+
+/* ── CARDS ── */
+.glass-card{background:var(--card);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-border);border-radius:var(--radius);box-shadow:var(--shadow);}
+.card-header{padding:16px 20px 13px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.card-title{font-size:13.5px;font-weight:700;color:var(--slate);}
+.card-body{padding:20px;}
+
+/* ── STAT CARDS ── */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:13px;margin-bottom:22px;}
+.stat-card{background:var(--card);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-border);border-radius:var(--radius);box-shadow:var(--shadow);padding:17px 19px;display:flex;flex-direction:column;gap:5px;transition:transform .15s,box-shadow .15s;cursor:default;}
+.stat-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg);}
+.stat-label{font-size:11.5px;color:var(--text-light);font-weight:500;display:flex;align-items:center;gap:6px;}
+.stat-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.stat-value{font-size:27px;font-weight:800;letter-spacing:-.5px;}
+.sv-blue{color:var(--blue);}.sv-green{color:var(--success);}.sv-red{color:var(--danger);}.sv-amber{color:var(--warning);}.sv-cyan{color:var(--cyan);}
+.sd-blue{background:var(--blue);}.sd-green{background:var(--success);}.sd-red{background:var(--danger);}.sd-amber{background:var(--warning);}
+
+/* ── BUTTONS ── */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:8px 16px;border-radius:var(--radius-sm);font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s;text-decoration:none;}
+.btn-primary{background:var(--blue);color:white;}.btn-primary:hover{background:var(--blue-dark);}
+.btn-success{background:var(--success);color:white;}.btn-success:hover{background:#059669;}
+.btn-danger{background:var(--danger);color:white;}.btn-danger:hover{background:#dc2626;}
+.btn-outline{background:transparent;color:var(--blue);border:1.5px solid var(--blue);}.btn-outline:hover{background:var(--blue-light);}
+.btn-ghost{background:rgba(37,99,235,.07);color:var(--blue);}.btn-ghost:hover{background:rgba(37,99,235,.14);}
+.btn-sm{padding:5px 11px;font-size:12px;}
+.btn:disabled{opacity:.42;cursor:not-allowed;pointer-events:none;}
+
+/* ── TABLE ── */
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+table{width:100%;min-width:600px;border-collapse:collapse;font-size:13px;}
+#page-payroll .table-wrap table{min-width:820px;}
+#page-att-admin .table-wrap table{min-width:750px;}
+th{padding:10px 13px;text-align:left;font-size:10.5px;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);background:rgba(37,99,235,.025);white-space:nowrap;}
+td{padding:10px 13px;border-bottom:1px solid rgba(37,99,235,.05);vertical-align:middle;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:rgba(37,99,235,.022);}
+
+/* ── BADGES ── */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;}
+.bg-green{background:#dcfce7;color:#166534;}.bg-red{background:#fee2e2;color:#991b1b;}
+.bg-amber{background:#fef3c7;color:#92400e;}.bg-blue{background:var(--blue-light);color:var(--blue-dark);}
+.bg-slate{background:#f1f5f9;color:var(--slate-mid);}
+
+/* ── FORMS ── */
+.form-group{margin-bottom:14px;}
+.form-label{display:block;font-size:12px;font-weight:700;color:var(--text-mid);margin-bottom:5px;}
+input,select,textarea{width:100%;padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:var(--radius-sm);font-size:13.5px;color:var(--text);background:white;transition:border-color .15s;outline:none;font-family:inherit;}
+input:focus,select:focus,textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.1);}
+textarea{resize:vertical;min-height:72px;}
+
+/* ── MODAL ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:200;display:none;align-items:center;justify-content:center;backdrop-filter:blur(5px);}
+.modal-overlay.open{display:flex;}
+.modal{background:white;border-radius:var(--radius);width:90%;max-width:530px;max-height:92vh;overflow-y:auto;box-shadow:var(--shadow-lg);animation:mIn .2s ease;}
+@keyframes mIn{from{transform:scale(.95) translateY(12px);opacity:0;}to{transform:scale(1) translateY(0);opacity:1;}}
+.modal-header{padding:19px 22px 13px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.modal-title{font-size:15px;font-weight:800;color:var(--slate);}
+.modal-close{background:none;border:none;cursor:pointer;color:var(--text-light);padding:4px;border-radius:6px;font-size:18px;line-height:1;}
+.modal-close:hover{color:var(--danger);background:#fee2e2;}
+.modal-body{padding:22px;}
+.modal-footer{padding:13px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px;}
+
+/* ── GRIDS ── */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
+
+/* ── GPS ── */
+.gps-map{background:linear-gradient(135deg,#0f2042,#0a1628);border-radius:var(--radius-sm);height:190px;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;margin-bottom:14px;}
+.gps-map::before{content:'';position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 29px,rgba(255,255,255,0.035) 30px),repeating-linear-gradient(90deg,transparent,transparent 29px,rgba(255,255,255,0.035) 30px);}
+.gps-pulse-wrap{position:relative;width:80px;height:80px;}
+.gps-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:14px;height:14px;background:var(--cyan);border-radius:50%;border:2.5px solid white;z-index:3;}
+.gps-ring{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border-radius:50%;border:2px solid rgba(6,182,212,.45);}
+.gps-ring-1{width:36px;height:36px;animation:gRing 2s infinite;}
+.gps-ring-2{width:60px;height:60px;animation:gRing 2s .6s infinite;}
+.gps-ring-3{width:80px;height:80px;animation:gRing 2s 1.2s infinite;}
+@keyframes gRing{0%{opacity:1;transform:translate(-50%,-50%) scale(.4);}100%{opacity:0;transform:translate(-50%,-50%) scale(1);}}
+.gps-info-bar{position:absolute;bottom:10px;left:10px;right:10px;background:rgba(255,255,255,.1);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:7px 11px;color:white;font-size:11.5px;display:flex;align-items:center;gap:8px;}
+.gps-ok{color:#34d399;font-weight:700;}.gps-err{color:#f87171;font-weight:700;}
+
+/* ── CHECK-IN ── */
+.checkin-card{padding:26px 22px;text-align:center;}
+.big-clock{font-size:44px;font-weight:900;color:var(--slate);letter-spacing:-2px;font-variant-numeric:tabular-nums;}
+.big-date{font-size:13px;color:var(--text-light);margin-top:2px;}
+.geo-status{border-radius:var(--radius-sm);padding:9px 14px;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:8px;margin:14px 0;text-align:left;}
+.geo-ok{background:#dcfce7;color:#166534;border:1px solid #bbf7d0;}
+.geo-err{background:#fee2e2;color:#991b1b;border:1px solid #fecaca;}
+.punch-btn{width:86px;height:86px;border-radius:50%;border:none;cursor:pointer;font-size:12px;font-weight:800;color:white;transition:all .2s;margin:16px auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;letter-spacing:.3px;}
+.pb-in{background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 0 0 9px rgba(16,185,129,.15);}
+.pb-in:hover:not(:disabled){transform:scale(1.06);box-shadow:0 0 0 13px rgba(16,185,129,.2);}
+.pb-out{background:linear-gradient(135deg,#ef4444,#dc2626);box-shadow:0 0 0 9px rgba(239,68,68,.15);}
+.pb-out:hover:not(:disabled){transform:scale(1.06);box-shadow:0 0 0 13px rgba(239,68,68,.2);}
+.pb-done{background:#94a3b8;box-shadow:none;cursor:not-allowed;}
+
+/* ── PAYROLL ── */
+.pay-calc{background:#f8faff;border:1px solid var(--border);border-radius:var(--radius-sm);padding:15px;}
+.pay-row{display:flex;justify-content:space-between;font-size:13.5px;padding:6px 0;border-bottom:1px dashed var(--border);}
+.pay-row:last-child{border-bottom:none;}
+.pay-total{font-weight:800;font-size:15px;color:var(--blue);border-top:2px solid var(--blue);margin-top:5px;padding-top:9px;}
+.pay-ded{color:var(--danger);}
+
+/* ── PROGRESS ── */
+.progress-bar{background:#e2e8f0;border-radius:20px;height:6px;overflow:hidden;}
+.progress-fill{height:100%;border-radius:20px;background:linear-gradient(90deg,var(--blue),var(--cyan));transition:width .4s;}
+
+/* ── CHIPS ── */
+.chips-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;}
+.chip{padding:5px 13px;border-radius:20px;font-size:12.5px;font-weight:600;cursor:pointer;border:1.5px solid #e2e8f0;background:white;color:var(--text-mid);transition:all .15s;}
+.chip.active{background:var(--blue);color:white;border-color:var(--blue);}
+
+/* ── AVATAR ── */
+.emp-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:white;flex-shrink:0;}
+
+/* ── TOAST ── */
+.toast-wrap{position:fixed;top:20px;right:20px;z-index:600;display:flex;flex-direction:column;gap:8px;pointer-events:none;}
+.toast{background:white;border-radius:var(--radius-sm);box-shadow:var(--shadow-lg);padding:11px 15px;font-size:13px;display:flex;align-items:center;gap:10px;border-left:3px solid;animation:tIn .3s ease;min-width:230px;pointer-events:auto;}
+.toast.success{border-color:var(--success);}.toast.error{border-color:var(--danger);}.toast.info{border-color:var(--blue);}
+.toast-icon{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0;color:white;}
+@keyframes tIn{from{transform:translateX(40px);opacity:0;}to{transform:translateX(0);opacity:1;}}
+
+/* ── MISC ── */
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+.section-title{font-size:15px;font-weight:800;color:var(--slate);}
+.flex{display:flex;align-items:center;gap:10px;}
+.text-muted{color:var(--text-light);font-size:12px;}
+.mt-16{margin-top:16px;}.mt-20{margin-top:20px;}.mb-8{margin-bottom:8px;}.mb-16{margin-bottom:16px;}
+.overflow-card{overflow:hidden;}
+.shift-tag{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:700;}
+.shift-m{background:#fef3c7;color:#92400e;}.shift-e{background:#ede9fe;color:#5b21b6;}
+hr.div{border:none;border-top:1px solid var(--border);margin:14px 0;}
+.att-bar-wrap{display:flex;gap:2px;height:9px;border-radius:5px;overflow:hidden;margin:8px 0;}
+.abs-seg{background:#fecaca;flex:1;}.pre-seg{background:var(--success);flex:1;}.late-seg{background:var(--warning);flex:1;}
+
+/* ── LOADING SCREEN ── */
+#loadingScreen{position:fixed;inset:0;background:linear-gradient(135deg,#dbeafe,#f8faff);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1000;gap:16px;}
+.loader-logo{width:60px;height:60px;background:var(--blue);border-radius:18px;display:flex;align-items:center;justify-content:center;}
+.loader-logo svg{width:32px;height:32px;fill:white;}
+.loader-text{font-size:20px;font-weight:900;color:var(--slate);}
+.loader-sub{font-size:13px;color:var(--text-light);}
+.spinner{width:30px;height:30px;border:3px solid var(--blue-light);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* ── LOGIN ── */
+#loginPage{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+.login-card{background:var(--card);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border:1px solid var(--glass-border);border-radius:20px;box-shadow:var(--shadow-lg);padding:38px;width:100%;max-width:400px;}
+.login-logo-icon{width:54px;height:54px;background:linear-gradient(135deg,var(--blue),var(--cyan));border-radius:16px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;}
+.login-logo-icon svg{width:27px;height:27px;fill:white;}
+.login-title{font-size:22px;font-weight:900;color:var(--slate);text-align:center;}
+.login-sub{font-size:13px;color:var(--text-light);text-align:center;margin-top:3px;margin-bottom:26px;}
+.role-tabs{display:flex;background:#f1f5f9;border-radius:var(--radius-sm);padding:3px;margin-bottom:22px;gap:3px;}
+.role-tab{flex:1;padding:8px;text-align:center;font-size:13px;font-weight:700;border-radius:6px;cursor:pointer;color:var(--text-mid);transition:all .15s;border:none;background:none;}
+.role-tab.active{background:white;color:var(--blue);box-shadow:0 2px 8px rgba(0,0,0,.09);}
+.login-btn{width:100%;padding:12px;background:linear-gradient(135deg,var(--blue),var(--blue-dark));color:white;border:none;border-radius:var(--radius-sm);font-size:15px;font-weight:800;cursor:pointer;margin-top:8px;transition:all .15s;letter-spacing:.2px;}
+.login-btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(37,99,235,.38);}
+.login-err{text-align:center;font-size:12.5px;color:var(--danger);margin-top:10px;min-height:18px;font-weight:600;}
+
+/* ── SALARY SLIP ── */
+.slip-header{background:linear-gradient(135deg,var(--blue),var(--blue-dark));color:white;padding:22px 22px 18px;border-radius:var(--radius-sm) var(--radius-sm) 0 0;margin:-22px -22px 18px;}
+.slip-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;}
+.slip-item{padding:9px 12px;background:#f8faff;border-radius:6px;}
+.slip-lbl{font-size:10.5px;color:var(--text-light);margin-bottom:2px;font-weight:600;}
+.slip-val{font-size:13.5px;font-weight:700;color:var(--slate);}
+
+/* ── ATTENDANCE CALENDAR ── */
+.att-calendar-wrap{padding:18px;}
+.att-cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+.att-cal-title{font-size:14px;font-weight:800;color:var(--slate);}
+.att-cal-legend{display:flex;gap:12px;font-size:11.5px;font-weight:600;}
+.att-cal-legend span{display:flex;align-items:center;gap:4px;}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;}
+.cal-day-hdr{text-align:center;font-size:10.5px;font-weight:700;color:var(--text-light);padding:4px 0;}
+.cal-day{border-radius:8px;aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;cursor:default;position:relative;}
+.cal-day.empty{background:transparent;}
+.cal-day.present{background:#dcfce7;color:#166534;}
+.cal-day.absent{background:#fee2e2;color:#991b1b;}
+.cal-day.late{background:#fef3c7;color:#92400e;}
+.cal-day.future{background:#f1f5f9;color:#cbd5e1;font-weight:400;}
+.cal-day.today-marker{outline:2px solid var(--blue);outline-offset:1px;}
+.cal-day[title]:hover::after{content:attr(title);position:absolute;bottom:calc(100% + 5px);left:50%;transform:translateX(-50%);background:#1e293b;color:white;font-size:10px;padding:3px 8px;border-radius:4px;white-space:nowrap;pointer-events:none;z-index:10;}
+.emp-report-row{cursor:pointer;transition:background .1s;}
+.emp-report-row:hover td{background:rgba(37,99,235,.05)!important;}
+.cal-back-btn{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--blue);cursor:pointer;border:none;background:none;padding:0;margin-bottom:14px;}
+.cal-back-btn:hover{text-decoration:underline;}
+#offlineBanner{display:none;position:fixed;bottom:0;left:0;right:0;background:#1e293b;color:white;text-align:center;padding:8px;font-size:12.5px;font-weight:600;z-index:500;}
+#offlineBanner.show{display:block;}
+
+/* ── RESPONSIVE ── */
+@media(max-width:768px){
+  .sidebar{transform:translateX(-100%);}
+  .sidebar.open{transform:translateX(0);}
+  .main{margin-left:0;}
+  .stats-grid{grid-template-columns:1fr 1fr;}
+  .grid-2,.grid-3{grid-template-columns:1fr;}
+  .content{padding:14px 16px;}
+  .topbar{padding:0 16px;}
+}
+</style>
+</head>
+<body>
+
+<!-- ════════ LOADING ════════ -->
+<div id="loadingScreen">
+  <div class="loader-logo"><svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>
+  <div class="loader-text">SSK Engineering</div>
+  <div class="loader-sub">Attendance & Payroll Management</div>
+  <div class="spinner"></div>
+</div>
+
+<!-- ════════ OFFLINE BANNER ════════ -->
+<div id="offlineBanner">⚠ You are offline — changes will sync when connection is restored</div>
+
+<!-- ════════════ LOGIN ════════════ -->
+<div id="loginPage" style="display:none;">
+  <div class="login-card">
+    <div class="login-logo-icon">
+      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+    </div>
+    <div class="login-title">SSK Engineering</div>
+    <div class="login-sub">Attendance & Payroll Management</div>
+    <div class="role-tabs">
+      <button class="role-tab active" onclick="setRole('admin',this)">Admin</button>
+      <button class="role-tab" onclick="setRole('employee',this)">Employee</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Email Address</label>
+      <input type="text" id="lUser" placeholder="Enter your email address" autocomplete="username" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <input type="password" id="lPass" placeholder="Enter your password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()" />
+    </div>
+    <button class="login-btn" id="loginBtn" onclick="doLogin()">Sign In →</button>
+    <div class="login-err" id="loginErr"></div>
+  </div>
+</div>
+
+<!-- ════════════ APP ════════════ -->
+<div id="appPage" style="display:none;">
+<div class="app">
+
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-mark">
+        <div class="logo-icon"><svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>
+        <div><div class="logo-text">SSK Engineering</div><div class="logo-sub">Management Suite v2.0</div></div>
+      </div>
+    </div>
+    <div class="sidebar-user">
+      <div class="u-avatar" id="sAvatar">AD</div>
+      <div><div class="u-name" id="sName">Administrator</div><div class="u-role" id="sRole">System Admin</div></div>
+    </div>
+    <div class="sidebar-nav" id="sidebarNav"></div>
+    <div class="sidebar-footer">
+      <button class="logout-btn" onclick="doLogout()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+        Sign Out
+      </button>
+      <div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--border);text-align:center;">
+        <div style="font-size:9.5px;color:var(--text-light);letter-spacing:.3px;line-height:1.7;">Crafted &amp; Designed by</div>
+        <a href="https://vesastudios.site" target="_blank" rel="noopener"
+           style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;margin-top:5px;justify-content:center;">
+          <!-- Vesa Studios V mark — two overlapping V shapes like the site favicon concept -->
+          <svg width="50" height="18" viewBox="0 0 100 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="36" rx="6" fill="#0f172a"/>
+            <text x="7" y="26" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="20" fill="#ffffff" letter-spacing="1">VESA</text>
+            <text x="72" y="26" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="22" fill="#D4AF37">.</text>
+          </svg>
+          <span style="font-size:11px;font-weight:700;letter-spacing:.3px;line-height:1;color:#64748b;">
+            Studios
+          </span>
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="flex">
+        <button onclick="document.getElementById('sidebar').classList.toggle('open')" id="menuBtn" style="display:none;background:none;border:none;cursor:pointer;padding:4px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <div class="page-title" id="pageTitle">Dashboard</div>
+      </div>
+      <div class="flex"><div class="time-badge" id="topbarClock"></div></div>
+    </div>
+
+    <div class="content">
+
+      <!-- ADMIN DASHBOARD -->
+      <div class="page active" id="page-dashboard">
+        <div class="stats-grid" id="dashStats"></div>
+        <div class="grid-2">
+          <div class="glass-card overflow-card">
+            <div class="card-header"><span class="card-title">Today's Attendance</span><span class="text-muted" id="dashDateLbl"></span></div>
+            <div class="card-body" id="dashTodayList"></div>
+          </div>
+          <div class="glass-card overflow-card">
+            <div class="card-header"><span class="card-title">Monthly Payroll Overview</span><span class="badge bg-blue">This Month</span></div>
+            <div class="card-body" id="dashPayroll"></div>
+          </div>
+        </div>
+        <div class="glass-card overflow-card mt-20">
+          <div class="card-header"><span class="card-title">Recent Activity</span></div>
+          <div class="card-body" id="dashActivity"></div>
+        </div>
+      </div>
+
+      <!-- EMPLOYEES -->
+      <div class="page" id="page-employees">
+        <div class="section-header">
+          <div class="section-title">Employee Directory</div>
+          <button class="btn btn-primary" onclick="openEmpModal()">+ Add Employee</button>
+        </div>
+        <div class="glass-card overflow-card">
+          <div class="card-body" style="padding:13px 16px;">
+            <div class="chips-row">
+              <span class="chip active" onclick="filterEmps('all',this)">All</span>
+              <span class="chip" onclick="filterEmps('active',this)">Active</span>
+              <span class="chip" onclick="filterEmps('inactive',this)">Inactive</span>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Employee</th><th>Department</th><th>Shift</th><th>Per Day Rate</th><th>OT Rate</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="empTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ATTENDANCE (employee view) -->
+      <div class="page" id="page-attendance">
+        <div class="grid-2" style="align-items:start;">
+          <div>
+            <div class="glass-card checkin-card mb-16">
+              <div class="big-clock" id="bigClock"></div>
+              <div class="big-date" id="bigDate"></div>
+              <div id="geoStatusBox"></div>
+              <div style="display:flex;justify-content:center;">
+                <button class="punch-btn pb-in" id="punchBtn" onclick="doPunch()">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                  <span id="punchLabel">Check In</span>
+                </button>
+              </div>
+              <div id="lastPunchInfo" style="font-size:12px;color:var(--text-light);text-align:center;min-height:18px;"></div>
+            </div>
+            <div class="glass-card">
+              <div class="card-header"><span class="card-title">GPS Location</span><span class="text-muted" id="gpsAccLabel"></span></div>
+              <div class="card-body" style="padding:16px;">
+                <div class="gps-map">
+                  <div class="gps-pulse-wrap">
+                    <div class="gps-ring gps-ring-1"></div>
+                    <div class="gps-ring gps-ring-2"></div>
+                    <div class="gps-ring gps-ring-3"></div>
+                    <div class="gps-center"></div>
+                  </div>
+                  <div class="gps-info-bar"><span id="gpsStatusIcon" class="gps-ok">●</span><span id="gpsLocLabel">Acquiring GPS…</span></div>
+                </div>
+                <div id="gpsCoordTable"></div>
+              </div>
+            </div>
+          </div>
+          <div class="glass-card overflow-card">
+            <div class="card-header"><span class="card-title">Attendance History</span></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Date</th><th>Check In</th><th>Check Out</th><th>Hours</th><th>OT</th><th>Status</th></tr></thead>
+                <tbody id="attHistTbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ADMIN ATTENDANCE -->
+      <div class="page" id="page-att-admin">
+        <div class="section-header">
+          <div class="section-title">Daily Attendance</div>
+          <div class="flex">
+            <input type="date" id="attAdminDate" style="width:155px;" oninput="loadAdminAtt()" />
+            <button class="btn btn-ghost btn-sm" onclick="exportAttCSV()">Export CSV</button>
+            <button class="btn btn-outline btn-sm" onclick="openManualAttModal()">+ Manual Entry</button>
+          </div>
+        </div>
+        <div class="stats-grid mb-16" id="attAdminStats"></div>
+        <div class="glass-card overflow-card">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Employee</th><th>Dept</th><th>Check In</th><th>Check Out</th><th>Location</th><th>Hours</th><th>OT</th><th>Status</th></tr></thead>
+              <tbody id="attAdminTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAYROLL -->
+      <div class="page" id="page-payroll">
+        <div class="section-header">
+          <div class="section-title">Payroll Management</div>
+          <div class="flex">
+            <select id="payrollMonth" style="width:175px;" onchange="loadPayroll()"></select>
+            <button class="btn btn-success btn-sm" onclick="processAllPayroll()">✓ Process All</button>
+            <button class="btn btn-ghost btn-sm" onclick="exportPayrollCSV()">Export CSV</button>
+          </div>
+        </div>
+        <div class="glass-card overflow-card">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Employee</th><th>Days Present</th><th>Earned (Days)</th><th>OT Earned</th><th>Advances</th><th>Deductions</th><th>Net Payable</th><th>Status</th><th></th></tr></thead>
+              <tbody id="payrollTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ADVANCES -->
+      <div class="page" id="page-advances">
+        <div class="section-header">
+          <div class="section-title">Advance Payments</div>
+          <button class="btn btn-primary" onclick="openAdvModal()">Record Advance</button>
+        </div>
+        <div class="glass-card overflow-card">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Employee</th><th>Amount</th><th>Date</th><th>Reason</th><th>Deduct Month</th><th>Status</th><th></th></tr></thead>
+              <tbody id="advTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- REPORTS -->
+      <div class="page" id="page-reports">
+        <div class="section-title mb-16">Reports</div>
+        <div class="chips-row" id="reportTabs">
+          <span class="chip active" onclick="showReport('attendance',this)">Monthly Attendance</span>
+          <span class="chip" onclick="showReport('payroll',this)">Payroll Report</span>
+          <span class="chip" onclick="showReport('summary',this)">Employee Summary</span>
+        </div>
+        <div id="reportContent"></div>
+      </div>
+
+      <!-- SETTINGS -->
+      <div class="page" id="page-settings">
+        <div class="section-title mb-16">System Settings</div>
+        <div class="grid-2">
+          <div class="glass-card">
+            <div class="card-header"><span class="card-title">GPS & Geo-Fence</span></div>
+            <div class="card-body">
+              <div class="form-group"><label class="form-label">Company Latitude</label><input type="number" id="sLat" step="0.000001" /></div>
+              <div class="form-group"><label class="form-label">Company Longitude</label><input type="number" id="sLng" step="0.000001" /></div>
+              <div class="form-group"><label class="form-label">Geo-Fence Radius (meters)</label><input type="number" id="sRadius" min="50" max="5000" /></div>
+              <div class="form-group"><label class="form-label">Company Name / Address</label><input type="text" id="sAddr" /></div>
+              <button class="btn btn-primary" onclick="saveSettings()">Save GPS Settings</button>
+            </div>
+          </div>
+          <div class="glass-card">
+            <div class="card-header"><span class="card-title">Shift & Payroll Settings</span></div>
+            <div class="card-body">
+              <div class="form-group"><label class="form-label">Shift Start Time</label><input type="time" id="sShiftStart" /></div>
+              <div class="form-group"><label class="form-label">Shift End Time</label><input type="time" id="sShiftEnd" /></div>
+              <div class="form-group"><label class="form-label">Late Threshold (minutes)</label><input type="number" id="sLate" min="0" max="120" /></div>
+              <div class="form-group"><label class="form-label">Working Days / Month (for attendance %)</label><input type="number" id="sWorkDays" min="20" max="31" /></div>
+              <button class="btn btn-primary" onclick="saveSettings()">Save Shift Settings</button>
+            </div>
+          </div>
+        </div>
+        <!-- Change Admin Password -->
+        <div class="glass-card mt-20">
+          <div class="card-header"><span class="card-title">Change Admin Password</span></div>
+          <div class="card-body">
+            <div class="grid-3">
+              <div class="form-group"><label class="form-label">Current Password</label><input type="password" id="pwCurrent" placeholder="Current password" autocomplete="current-password" /></div>
+              <div class="form-group"><label class="form-label">New Password</label><input type="password" id="pwNew" placeholder="New password (min 8 chars)" autocomplete="new-password" /></div>
+              <div class="form-group"><label class="form-label">Confirm New Password</label><input type="password" id="pwConfirm" placeholder="Repeat new password" autocomplete="new-password" /></div>
+            </div>
+            <button class="btn btn-primary" onclick="changeAdminPassword()">Update Password</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- EMPLOYEE DASHBOARD -->
+      <div class="page" id="page-emp-dash">
+        <div class="stats-grid" id="empDashStats"></div>
+        <div class="grid-2 mt-20">
+          <div class="glass-card">
+            <div class="card-header"><span class="card-title">My Payroll This Month</span></div>
+            <div class="card-body" id="empPayrollBox"></div>
+          </div>
+          <div class="glass-card">
+            <div class="card-header"><span class="card-title">Monthly Attendance</span></div>
+            <div class="card-body" id="empAttBox"></div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /app -->
+</div><!-- /appPage -->
+
+<!-- ════════════ MODALS ════════════ -->
+
+<!-- Employee Modal -->
+<div class="modal-overlay" id="empModal">
+  <div class="modal">
+    <div class="modal-header"><span class="modal-title" id="empModalTitle">Add Employee</span><button class="modal-close" onclick="closeModal('empModal')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="empEditId" />
+      <div class="grid-2">
+        <div class="form-group"><label class="form-label">Full Name *</label><input type="text" id="eN" placeholder="Rahul Sharma" /></div>
+        <div class="form-group"><label class="form-label">Employee ID *</label><input type="text" id="eI" placeholder="EMP001" /></div>
+      </div>
+      <div class="grid-2">
+        <div class="form-group"><label class="form-label">Department</label>
+          <select id="eDept"><option>Welding</option><option>Assembly</option><option>Quality Control</option><option>Machining</option><option>Painting</option><option>Logistics</option><option>Admin</option></select>
+        </div>
+        <div class="form-group"><label class="form-label">Shift</label>
+          <select id="eShift"><option value="morning">Morning (9AM–5PM)</option><option value="evening">Evening (2PM–10PM)</option></select>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="form-group"><label class="form-label">Per Day Rate (₹) *</label><input type="number" id="eSal" placeholder="850" /></div>
+        <div class="form-group"><label class="form-label">OT Rate / Hour (₹)</label><input type="number" id="eOT" placeholder="120" /></div>
+      </div>
+      <div class="grid-2">
+        <div class="form-group"><label class="form-label">Phone</label><input type="text" id="ePh" placeholder="9876543210" /></div>
+        <div class="form-group"><label class="form-label">Status</label><select id="eSt"><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
+      </div>
+      <div class="form-group"><label class="form-label">Login Password</label><input type="password" id="ePw" placeholder="Set a secure password" autocomplete="new-password" /></div>
+      <div class="form-group"><label class="form-label">Login Email (for Firebase Auth)</label><input type="email" id="eEmail" placeholder="emp001@sskengineering.com" /></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-sm" onclick="closeModal('empModal')">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="saveEmployee()">Save Employee</button>
+    </div>
+  </div>
+</div>
+
+<!-- Advance Modal -->
+<div class="modal-overlay" id="advModal">
+  <div class="modal">
+    <div class="modal-header"><span class="modal-title">Record Advance Payment</span><button class="modal-close" onclick="closeModal('advModal')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-label">Employee *</label><select id="advEmpSel"></select></div>
+      <div class="grid-2">
+        <div class="form-group"><label class="form-label">Amount (₹) *</label><input type="number" id="advAmt" placeholder="5000" /></div>
+        <div class="form-group"><label class="form-label">Deduct From Month</label><select id="advMonth"></select></div>
+      </div>
+      <div class="form-group"><label class="form-label">Reason</label><textarea id="advReason" placeholder="Medical emergency, personal need…"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-sm" onclick="closeModal('advModal')">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="saveAdvance()">Record Advance</button>
+    </div>
+  </div>
+</div>
+
+<!-- Salary Slip Modal -->
+<div class="modal-overlay" id="slipModal">
+  <div class="modal">
+    <div class="modal-header"><span class="modal-title">Salary Slip</span><button class="modal-close" onclick="closeModal('slipModal')">✕</button></div>
+    <div class="modal-body" id="slipBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-sm" onclick="closeModal('slipModal')">Close</button>
+      <button class="btn btn-primary btn-sm" onclick="printSlip()">🖨 Print Slip</button>
+    </div>
+  </div>
+</div>
+
+<!-- Manual Attendance Modal (Admin GPS override) -->
+<div class="modal-overlay" id="manualAttModal">
+  <div class="modal">
+    <div class="modal-header"><span class="modal-title">Manual Attendance Entry</span><button class="modal-close" onclick="closeModal('manualAttModal')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group" style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:10px 13px;font-size:12.5px;color:#92400e;margin-bottom:18px;">
+        ⚠ Use this only for employees who couldn't check in via GPS (device issue, off-site work, etc.)
+      </div>
+      <div class="grid-2">
+        <div class="form-group"><label class="form-label">Employee *</label><select id="maEmpSel"></select></div>
+        <div class="form-group"><label class="form-label">Date *</label><input type="date" id="maDate" /></div>
+      </div>
+      <div class="grid-2">
+        <div class="form-group"><label class="form-label">Check In Time *</label><input type="time" id="maIn" /></div>
+        <div class="form-group"><label class="form-label">Check Out Time</label><input type="time" id="maOut" /></div>
+      </div>
+      <div class="form-group"><label class="form-label">Reason / Note</label><textarea id="maNote" placeholder="GPS unavailable, off-site visit, etc."></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-sm" onclick="closeModal('manualAttModal')">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="saveManualAtt()">Save Entry</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+// ═══════════════════════════════════════════════
+//  WAIT FOR FIREBASE MODULE TO LOAD
+// ═══════════════════════════════════════════════
+function waitForFB(fn) {
+  if (window._fb) { fn(); }
+  else { setTimeout(() => waitForFB(fn), 60); }
+}
+
+// ═══════════════════════════════════════════════
+//  DEFAULT SETTINGS
+// ═══════════════════════════════════════════════
+const DEF_SETTINGS = {
+  lat: 18.5204, lng: 73.8567, radius: 100,
+  addr: 'SSK Engineering, MIDC Pimpri-Chinchwad, Pune',
+  shiftStart: '09:00', shiftEnd: '17:00', lateThreshold: 15, workDays: 26
+};
+
+const COLORS = ['#2563EB','#7c3aed','#0891b2','#059669','#dc2626','#d97706','#be185d','#0f766e','#b45309','#4f46e5'];
+
+// ═══════════════════════════════════════════════
+//  IN-MEMORY CACHE (refreshed from Firestore)
+// ═══════════════════════════════════════════════
+let _employees   = [];
+let _attendance  = [];
+let _advances    = [];
+let _payroll     = {};
+let _settings    = { ...DEF_SETTINGS };
+
+// ── Firestore collection helpers ──
+function fbDoc(path, ...segs) {
+  const { db, doc } = window._fb;
+  return doc(db, path, ...segs);
+}
+function fbCol(path) {
+  const { db, collection } = window._fb;
+  return collection(db, path);
+}
+
+// ═══════════════════════════════════════════════
+//  LOAD FROM FIRESTORE
+// ═══════════════════════════════════════════════
+async function loadAllData() {
+  const { db, getDocs, collection, getDoc, doc } = window._fb;
+
+  // Each collection loaded independently so one failure doesn't block the rest
+  try {
+    const empSnap = await getDocs(collection(db, 'employees'));
+    _employees = empSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
+  } catch(e) { console.warn('employees load failed:', e.code); }
+
+  try {
+    const attSnap = await getDocs(collection(db, 'attendance'));
+    _attendance = attSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
+  } catch(e) { console.warn('attendance load failed:', e.code); }
+
+  try {
+    const advSnap = await getDocs(collection(db, 'advances'));
+    _advances = advSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
+  } catch(e) { console.warn('advances load failed:', e.code); }
+
+  try {
+    const paySnap = await getDocs(collection(db, 'payroll'));
+    _payroll = {};
+    paySnap.docs.forEach(d => { _payroll[d.id] = d.data(); });
+  } catch(e) { console.warn('payroll load failed:', e.code); }
+
+  try {
+    const sSnap = await getDoc(doc(db, 'settings', 'main'));
+    if (sSnap.exists()) _settings = { ...DEF_SETTINGS, ...sSnap.data() };
+  } catch(e) { console.warn('settings load failed:', e.code); }
+}
+
+// ── localStorage fallbacks (used when Firebase not yet configured) ──
+function isFirebaseReady() {
+  return window._fb && window._fb.db &&
+    (window.firebaseConfig?.apiKey !== 'YOUR_API_KEY' ||
+     !window.firebaseConfig); // if config check not available, try anyway
+}
+
+function ge() { return _employees; }
+function ga() { return _attendance; }
+function gadv() { return _advances; }
+function gpay() { return _payroll; }
+function gs() { return _settings; }
+
+async function se(list)  { _employees = list; await _syncEmployees(); }
+async function sa(list)  { _attendance = list; }  // individual writes done inline
+async function sadv(list){ _advances = list; }
+async function spay(obj) { _payroll = obj; }
+async function ss(obj)   {
+  _settings = obj;
+  const { db, doc, setDoc } = window._fb;
+  await setDoc(doc(db, 'settings', 'main'), obj);
+}
+
+async function _syncEmployees() {
+  // No-op: employees are written individually on add/edit/delete
+}
+
+// ═══════════════════════════════════════════════
+//  UTILITY
+// ═══════════════════════════════════════════════
+function todayStr() {
+  const n = new Date();
+  return n.getFullYear() + '-' + pad(n.getMonth()+1) + '-' + pad(n.getDate());
+}
+function pad(n) { return String(n).padStart(2, '0'); }
+function monthStr() { const n = new Date(); return n.getFullYear() + '-' + pad(n.getMonth()+1); }
+function prevMonthStr() { const n = new Date(new Date().getFullYear(), new Date().getMonth()-1, 1); return n.getFullYear()+'-'+pad(n.getMonth()+1); }
+function initials(name) { return name.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase(); }
+function fmt(n) { return Number(n).toLocaleString('en-IN'); }
+function dist(lat1,lng1,lat2,lng2) {
+  const R=6371000,dLat=(lat2-lat1)*Math.PI/180,dLng=(lng2-lng1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+// ═══════════════════════════════════════════════
+//  LOGIN / LOGOUT
+// ═══════════════════════════════════════════════
+let CU = null, CR = null, loginRole = 'admin';
+
+function setRole(r, el) {
+  loginRole = r;
+  document.querySelectorAll('.role-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('lUser').placeholder = 'Your email address';
+  document.getElementById('lUser').value = '';
+  document.getElementById('lPass').value = '';
+  document.getElementById('loginErr').textContent = '';
+}
+
+async function doLogin() {
+  const u = document.getElementById('lUser').value.trim();
+  const p = document.getElementById('lPass').value.trim();
+  const errEl = document.getElementById('loginErr');
+  const btn = document.getElementById('loginBtn');
+  errEl.textContent = '';
+  if (!u || !p) { errEl.textContent = 'Please enter your credentials.'; return; }
+
+  btn.textContent = 'Signing in…'; btn.disabled = true;
+
+  try {
+    const { auth, signInWithEmailAndPassword } = window._fb;
+
+    // Both admin and employee sign in directly with their email
+    // _loadFirebaseUser (called by onAuthStateChanged) determines the role
+    await signInWithEmailAndPassword(auth, u, p);
+  } catch (err) {
+    errEl.textContent = err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found'
+      ? 'Invalid credentials. Please check and try again.'
+      : 'Login failed: ' + err.message;
+    btn.textContent = 'Sign In →'; btn.disabled = false;
+  }
+}
+
+// Called by Firebase onAuthStateChanged
+window._loadFirebaseUser = async function(uid) {
+  const { db, getDoc, doc, getDocs, collection, auth } = window._fb;
+  const showErr = (msg) => {
+    document.getElementById('loadingScreen').style.display = 'none';
+    document.getElementById('loginPage').style.display = 'flex';
+    document.getElementById('loginErr').textContent = msg;
+    document.getElementById('loginBtn').textContent = 'Sign In →';
+    document.getElementById('loginBtn').disabled = false;
+  };
+
+  try {
+    // 1. Check admin
+    const adminDoc = await getDoc(doc(db, 'admins', uid));
+    if (adminDoc.exists()) {
+      CR = 'admin';
+      CU = { name: adminDoc.data().name || 'Administrator', id: 'admin', uid };
+      await loadAllData();
+      enterApp();
+      return;
+    }
+  } catch(e) {
+    // Not admin or permission denied — continue to employee check
+  }
+
+  try {
+    // 2. Find employee by email match (most reliable)
+    const currentEmail = (auth.currentUser?.email || '').toLowerCase();
+    const empSnap = await getDocs(collection(db, 'employees'));
+    let matchedDoc = null;
+
+    empSnap.docs.forEach(d => {
+      const data = d.data();
+      if (
+        data.uid === uid ||
+        (currentEmail && (data.email || '').toLowerCase() === currentEmail)
+      ) {
+        matchedDoc = { firestoreId: d.id, ...data };
+      }
+    });
+
+    if (matchedDoc) {
+      CR = 'employee';
+      CU = matchedDoc;
+      await loadAllData();
+      enterApp();
+      return;
+    }
+
+    // 3. No match found at all
+    await window._fb.signOut(auth);
+    showErr('Account not linked to any profile. Contact admin.');
+
+  } catch(e) {
+    console.error('Login error:', e.code, e.message);
+    await window._fb.signOut(auth).catch(()=>{});
+    showErr('Login error: ' + (e.message || e.code || 'Unknown error'));
+  }
+};
+
+window._showLogin = function() {
+  document.getElementById('loadingScreen').style.display = 'none';
+  document.getElementById('loginPage').style.display = 'flex';
+  document.getElementById('appPage').style.display = 'none';
+  document.getElementById('loginBtn').textContent = 'Sign In →';
+  document.getElementById('loginBtn').disabled = false;
+};
+
+function enterApp() {
+  document.getElementById('loadingScreen').style.display = 'none';
+  document.getElementById('loginPage').style.display = 'none';
+  document.getElementById('appPage').style.display = 'block';
+  buildNav();
+  updateSidebarUser();
+  startClock();
+  navigate(CR === 'admin' ? 'dashboard' : 'emp-dash');
+}
+
+async function doLogout() {
+  stopGPS();
+  await window._fb.signOut(window._fb.auth);
+  CU = null; CR = null;
+  _employees = []; _attendance = []; _advances = []; _payroll = {}; _settings = { ...DEF_SETTINGS };
+  window._showLogin();
+}
+
+// ═══════════════════════════════════════════════
+//  ADMIN PASSWORD CHANGE
+// ═══════════════════════════════════════════════
+async function changeAdminPassword() {
+  const cur = document.getElementById('pwCurrent').value;
+  const nw  = document.getElementById('pwNew').value;
+  const cf  = document.getElementById('pwConfirm').value;
+  if (!cur || !nw || !cf) { toast('Fill all password fields', 'error'); return; }
+  if (nw.length < 8) { toast('New password must be at least 8 characters', 'error'); return; }
+  if (nw !== cf) { toast('Passwords do not match', 'error'); return; }
+  try {
+    const { auth, EmailAuthProvider, reauthenticateWithCredential, updatePassword } = window._fb;
+    const user = auth.currentUser;
+    const cred = EmailAuthProvider.credential(user.email, cur);
+    await reauthenticateWithCredential(user, cred);
+    await updatePassword(user, nw);
+    document.getElementById('pwCurrent').value = '';
+    document.getElementById('pwNew').value = '';
+    document.getElementById('pwConfirm').value = '';
+    toast('Password updated successfully', 'success');
+  } catch(e) {
+    toast(e.code === 'auth/wrong-password' ? 'Current password is incorrect' : 'Error: ' + e.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  NAVIGATION
+// ═══════════════════════════════════════════════
+const ADMIN_NAV = [
+  { id:'dashboard', label:'Dashboard', icon:'grid' },
+  { sec:'People' }, { id:'employees', label:'Employees', icon:'users' },
+  { sec:'Attendance' }, { id:'att-admin', label:'Daily Attendance', icon:'cal' },
+  { sec:'Finance' }, { id:'payroll', label:'Payroll', icon:'wallet' }, { id:'advances', label:'Advance Payments', icon:'cash' },
+  { sec:'Analytics' }, { id:'reports', label:'Reports', icon:'chart' },
+  { sec:'System' }, { id:'settings', label:'Settings', icon:'cog' },
+];
+const EMP_NAV = [
+  { id:'emp-dash', label:'My Dashboard', icon:'grid' },
+  { id:'attendance', label:'Check In / Out', icon:'pin' }
+];
+
+const ICONS = {
+  grid:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>',
+  users:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>',
+  cal:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="9 16 11 18 15 14"/></svg>',
+  wallet:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12V7H5a2 2 0 010-4h14v4"/><path d="M3 5v14a2 2 0 002 2h16v-5"/><circle cx="18" cy="14" r="1"/></svg>',
+  cash:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>',
+  chart:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/></svg>',
+  cog:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06-.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>',
+  pin:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>',
+};
+
+const PAGE_TITLES = {
+  dashboard:'Dashboard', employees:'Employee Directory', 'att-admin':'Daily Attendance',
+  payroll:'Payroll Management', advances:'Advance Payments', reports:'Reports',
+  settings:'Settings', attendance:'Check In / Out', 'emp-dash':'My Dashboard'
+};
+
+function buildNav() {
+  const nav = CR === 'admin' ? ADMIN_NAV : EMP_NAV;
+  document.getElementById('sidebarNav').innerHTML = nav.map(item => {
+    if (item.sec) return `<div class="nav-sec">${item.sec}</div>`;
+    return `<button class="nav-item" id="nav-${item.id}" onclick="navigate('${item.id}')">${ICONS[item.icon]||''}${item.label}</button>`;
+  }).join('');
+}
+function updateSidebarUser() {
+  if (!CU) return;
+  const av = document.getElementById('sAvatar');
+  av.textContent = initials(CU.name);
+  av.style.background = CU.color || '#2563EB';
+  document.getElementById('sName').textContent = CU.name;
+  document.getElementById('sRole').textContent = CR === 'admin' ? 'System Admin' : ((CU.dept||'') + ' Dept');
+}
+
+let CP = '';
+function navigate(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const pg = document.getElementById('page-' + id);
+  if (pg) pg.classList.add('active');
+  const nb = document.getElementById('nav-' + id);
+  if (nb) nb.classList.add('active');
+  document.getElementById('pageTitle').textContent = PAGE_TITLES[id] || id;
+  CP = id;
+  if (id === 'dashboard')    loadDashboard();
+  else if (id === 'employees') loadEmployees();
+  else if (id === 'att-admin') { document.getElementById('attAdminDate').value = todayStr(); loadAdminAtt(); }
+  else if (id === 'payroll')   { buildPayrollMonths(); loadPayroll(); }
+  else if (id === 'advances')  loadAdvances();
+  else if (id === 'reports')   showReport('attendance');
+  else if (id === 'settings')  loadSettings();
+  else if (id === 'attendance') initAttPage();
+  else if (id === 'emp-dash')  loadEmpDash();
+  if (window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('open');
+}
+
+// ═══════════════════════════════════════════════
+//  CLOCK
+// ═══════════════════════════════════════════════
+let clockTick;
+function startClock() {
+  function tick() {
+    const now = new Date();
+    const ts = now.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+    document.getElementById('topbarClock').textContent = ts;
+    const bc = document.getElementById('bigClock'); if (bc) bc.textContent = ts;
+  }
+  tick(); clockTick = setInterval(tick, 1000);
+}
+
+// ═══════════════════════════════════════════════
+//  DASHBOARD
+// ═══════════════════════════════════════════════
+function loadDashboard() {
+  const emps = ge(), att = ga(), today = todayStr(), month = monthStr();
+  const active = emps.filter(e => e.status === 'active');
+  const todayAtt = att.filter(a => a.date === today);
+  const presentIds = todayAtt.filter(a => a.checkIn).map(a => a.empId);
+  const absent = active.filter(e => !presentIds.includes(e.employeeId || e.id));
+  const late = todayAtt.filter(a => a.status === 'late');
+  const monthAtt = att.filter(a => a.date.startsWith(month));
+  const totalOT = monthAtt.reduce((s, a) => s + (a.overtime||0), 0);
+
+  document.getElementById('dashStats').innerHTML = `
+    <div class="stat-card"><div class="stat-label"><span class="stat-dot sd-blue"></span>Total Active</div><div class="stat-value sv-blue">${active.length}</div></div>
+    <div class="stat-card"><div class="stat-label"><span class="stat-dot sd-green"></span>Present Today</div><div class="stat-value sv-green">${presentIds.length}</div></div>
+    <div class="stat-card"><div class="stat-label"><span class="stat-dot sd-red"></span>Absent Today</div><div class="stat-value sv-red">${absent.length}</div></div>
+    <div class="stat-card"><div class="stat-label"><span class="stat-dot sd-amber"></span>Late Arrivals</div><div class="stat-value sv-amber">${late.length}</div></div>
+    <div class="stat-card"><div class="stat-label"><span class="stat-dot sd-blue"></span>OT Hours (Month)</div><div class="stat-value sv-cyan">${totalOT.toFixed(1)}h</div></div>`;
+
+  document.getElementById('dashDateLbl').textContent = new Date().toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+
+  let listH = '';
+  active.slice(0, 8).forEach(emp => {
+    const eid = emp.employeeId || emp.id;
+    const rec = todayAtt.find(a => a.empId === eid);
+    const badge = rec ? (rec.status === 'late' ? '<span class="badge bg-amber">Late</span>' : '<span class="badge bg-green">Present</span>') : '<span class="badge bg-red">Absent</span>';
+    listH += `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
+      <div class="flex"><div class="emp-avatar" style="width:32px;height:32px;font-size:11px;background:${emp.color||'#2563EB'}">${initials(emp.name)}</div>
+      <div><div style="font-size:13px;font-weight:600;">${emp.name}</div><div class="text-muted">${emp.dept}</div></div></div>
+      <div class="flex"><span style="font-size:12px;color:var(--text-mid);">${rec?.checkIn||'—'}</span>${badge}</div>
+    </div>`;
+  });
+  document.getElementById('dashTodayList').innerHTML = listH || '<div style="text-align:center;padding:20px;color:var(--text-light);">No attendance records for today yet.</div>';
+
+  const adv = gadv().filter(a => a.month === month);
+  let totalBase = 0, totalOTE = 0, totalAdv = 0;
+  const s = gs();
+  active.forEach(emp => {
+    totalBase += (emp.salary || 0) * s.workDays;
+    const ot = monthAtt.filter(a => a.empId === (emp.employeeId||emp.id)).reduce((sum,a) => sum+(a.overtime||0), 0);
+    totalOTE += ot * (emp.otRate||0);
+    totalAdv += adv.filter(a => a.empId === (emp.employeeId||emp.id)).reduce((sum,a) => sum+a.amount, 0);
+  });
+  document.getElementById('dashPayroll').innerHTML = `
+    <div class="pay-calc">
+      <div class="pay-row"><span>Total Base (est. full month)</span><span style="font-weight:700;">₹${fmt(totalBase)}</span></div>
+      <div class="pay-row"><span>Overtime Earnings</span><span style="color:var(--success);font-weight:700;">+₹${fmt(Math.round(totalOTE))}</span></div>
+      <div class="pay-row pay-ded"><span>Total Advances</span><span>−₹${fmt(totalAdv)}</span></div>
+      <div class="pay-row pay-total"><span>Estimated Payroll</span><span>₹${fmt(Math.round(totalBase+totalOTE-totalAdv))}</span></div>
+    </div>
+    <div class="text-muted mt-16" style="text-align:center;">Calculated through today · ${new Date().toLocaleDateString('en-IN',{month:'long',year:'numeric'})}</div>`;
+
+  let actH = '';
+  const recent = [...att].sort((a,b) => b.date.localeCompare(a.date)||(b.checkIn||'').localeCompare(a.checkIn||'')).slice(0,6);
+  recent.forEach(a => {
+    const emp = emps.find(e => (e.employeeId||e.id) === a.empId);
+    actH += `<div style="display:flex;align-items:center;gap:12px;padding:7px 0;border-bottom:1px solid var(--border);">
+      <div class="emp-avatar" style="width:28px;height:28px;font-size:10px;background:${emp?.color||'#2563EB'}">${initials(emp?.name||'??')}</div>
+      <div style="flex:1;font-size:13px;"><strong>${emp?.name||a.empId}</strong> checked ${a.checkOut?'out at '+a.checkOut:'in at '+a.checkIn}</div>
+      <span class="text-muted">${a.date}</span>
+    </div>`;
+  });
+  document.getElementById('dashActivity').innerHTML = actH || '<div style="text-align:center;padding:20px;color:var(--text-light);">No recent activity.</div>';
+}
+
+// ═══════════════════════════════════════════════
+//  EMPLOYEES
+// ═══════════════════════════════════════════════
+let empFilter = 'all';
+function loadEmployees() { renderEmpTable(); }
+function filterEmps(f, el) {
+  empFilter = f;
+  document.querySelectorAll('#page-employees .chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  renderEmpTable();
+}
+function renderEmpTable() {
+  let emps = ge();
+  if (empFilter !== 'all') emps = emps.filter(e => e.status === empFilter);
+  document.getElementById('empTbody').innerHTML = emps.map(e => `
+    <tr>
+      <td><div class="flex"><div class="emp-avatar" style="background:${e.color||'#2563EB'}">${initials(e.name)}</div>
+        <div><div style="font-weight:700;font-size:13.5px;">${e.name}</div><div class="text-muted">${e.employeeId||e.id}</div></div></div></td>
+      <td>${e.dept}</td>
+      <td><span class="shift-tag ${e.shift==='morning'?'shift-m':'shift-e'}">${e.shift==='morning'?'🌅 Morning':'🌆 Evening'}</span></td>
+      <td>₹${fmt(e.salary)}/day</td>
+      <td>₹${e.otRate}/hr</td>
+      <td><span class="badge ${e.status==='active'?'bg-green':'bg-slate'}">${e.status}</span></td>
+      <td><div class="flex">
+        <button class="btn btn-ghost btn-sm" onclick="editEmployee('${e.firestoreId||e.id}')">Edit</button>
+        <button class="btn btn-sm" style="background:#fee2e2;color:var(--danger);" onclick="deleteEmployee('${e.firestoreId||e.id}')">Delete</button>
+      </div></td>
+    </tr>`).join('');
+}
+
+function openEmpModal() {
+  document.getElementById('empModalTitle').textContent = 'Add Employee';
+  document.getElementById('empEditId').value = '';
+  ['eN','eI','ePh','ePw','eEmail'].forEach(f => document.getElementById(f).value = '');
+  document.getElementById('eSal').value = ''; document.getElementById('eOT').value = '';
+  document.getElementById('eSt').value = 'active';
+  document.getElementById('empModal').classList.add('open');
+}
+function editEmployee(fid) {
+  const e = ge().find(x => (x.firestoreId||x.id) === fid); if (!e) return;
+  document.getElementById('empModalTitle').textContent = 'Edit Employee';
+  document.getElementById('empEditId').value = fid;
+  document.getElementById('eN').value = e.name;
+  document.getElementById('eI').value = e.employeeId || e.id;
+  document.getElementById('eDept').value = e.dept;
+  document.getElementById('eShift').value = e.shift;
+  document.getElementById('eSal').value = e.salary;
+  document.getElementById('eOT').value = e.otRate;
+  document.getElementById('ePh').value = e.phone || '';
+  document.getElementById('eSt').value = e.status;
+  document.getElementById('ePw').value = ''; // never pre-fill password
+  document.getElementById('eEmail').value = e.email || '';
+  document.getElementById('empModal').classList.add('open');
+}
+
+async function saveEmployee() {
+  const editFid = document.getElementById('empEditId').value;
+  const name    = document.getElementById('eN').value.trim();
+  const empId   = document.getElementById('eI').value.trim().toUpperCase();
+  const salary  = parseFloat(document.getElementById('eSal').value) || 0;
+  const email   = document.getElementById('eEmail').value.trim();
+  const pw      = document.getElementById('ePw').value;
+
+  if (!name || !empId || !salary) { toast('Please fill required fields (Name, ID, Per Day Rate)', 'error'); return; }
+
+  const rec = {
+    name, employeeId: empId,
+    dept: document.getElementById('eDept').value,
+    shift: document.getElementById('eShift').value,
+    salary, otRate: parseFloat(document.getElementById('eOT').value) || 100,
+    phone: document.getElementById('ePh').value,
+    status: document.getElementById('eSt').value,
+    email: email || '',
+    color: COLORS[ge().length % COLORS.length],
+    updatedAt: new Date().toISOString()
+  };
+
+  try {
+    const { db, doc, setDoc, addDoc, collection } = window._fb;
+    if (editFid) {
+      const existing = ge().find(e => (e.firestoreId||e.id) === editFid);
+      if (existing) rec.color = existing.color;
+      await setDoc(doc(db, 'employees', editFid), rec, { merge: true });
+      _employees = _employees.map(e => (e.firestoreId||e.id) === editFid ? { firestoreId: editFid, ...rec } : e);
+    } else {
+      if (ge().find(e => e.employeeId === empId)) { toast('Employee ID already exists', 'error'); return; }
+      const ref = await addDoc(collection(db, 'employees'), { ...rec, createdAt: new Date().toISOString() });
+      _employees.push({ firestoreId: ref.id, ...rec });
+    }
+    closeModal('empModal');
+    renderEmpTable();
+    toast('Employee saved successfully', 'success');
+  } catch(e) {
+    toast('Save failed: ' + e.message, 'error');
+  }
+}
+
+async function deleteEmployee(fid) {
+  if (!confirm('Delete this employee? Their attendance history will be retained.')) return;
+  try {
+    const { db, doc, deleteDoc } = window._fb;
+    await deleteDoc(doc(db, 'employees', fid));
+    _employees = _employees.filter(e => (e.firestoreId||e.id) !== fid);
+    renderEmpTable();
+    toast('Employee deleted', 'info');
+  } catch(e) {
+    toast('Delete failed: ' + e.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  GPS ATTENDANCE
+// ═══════════════════════════════════════════════
+let GPS = null, gpsErr = null, gpsWatchId = null;
+
+function initAttPage() {
+  const today = todayStr();
+  const rec = ga().find(a => a.empId === (CU.employeeId||CU.id) && a.date === today);
+  updatePunchBtn(rec);
+  loadAttHistory();
+  const bd = document.getElementById('bigDate');
+  if (bd) bd.textContent = new Date().toLocaleDateString('en-IN', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+  startGPS();
+}
+
+function startGPS() {
+  stopGPS();
+  if (!navigator.geolocation) { setGPSFallback('GPS not supported by this browser'); return; }
+  gpsWatchId = navigator.geolocation.watchPosition(
+    pos => {
+      GPS = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, real: true };
+      gpsErr = null; updateGPSUI();
+    },
+    err => {
+      const s = gs();
+      GPS = { lat: s.lat, lng: s.lng, acc: 10, real: false };
+      gpsErr = err.message; updateGPSUI();
+    },
+    { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
+  );
+}
+function stopGPS() { if (gpsWatchId != null) { navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; } }
+function setGPSFallback(msg) { const s = gs(); GPS = { lat: s.lat, lng: s.lng, acc: 0, real: false }; gpsErr = msg; updateGPSUI(); }
+
+function updateGPSUI() {
+  if (!GPS) return;
+  const s = gs();
+  const d = dist(GPS.lat, GPS.lng, s.lat, s.lng);
+  const inZone = d <= s.radius;
+
+  const icon     = document.getElementById('gpsStatusIcon');
+  const locLbl   = document.getElementById('gpsLocLabel');
+  const accLbl   = document.getElementById('gpsAccLabel');
+  const coordBox = document.getElementById('gpsCoordTable');
+  const geoBox   = document.getElementById('geoStatusBox');
+  const punchBtn = document.getElementById('punchBtn');
+
+  if (icon)   icon.className = inZone ? 'gps-ok' : 'gps-err';
+  if (locLbl) locLbl.textContent = GPS.real ? s.addr : 'Demo mode — GPS simulated at office location';
+  if (accLbl) accLbl.textContent = GPS.real ? `±${Math.round(GPS.acc)}m accuracy` : 'Demo mode';
+
+  if (coordBox) coordBox.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px;font-size:12px;">
+      <div style="background:#f8faff;padding:8px;border-radius:6px;"><div class="text-muted">Latitude</div><div style="font-weight:700;">${GPS.lat.toFixed(6)}</div></div>
+      <div style="background:#f8faff;padding:8px;border-radius:6px;"><div class="text-muted">Longitude</div><div style="font-weight:700;">${GPS.lng.toFixed(6)}</div></div>
+      <div style="background:#f8faff;padding:8px;border-radius:6px;"><div class="text-muted">Distance from office</div><div style="font-weight:700;">${Math.round(d)}m</div></div>
+      <div style="background:#f8faff;padding:8px;border-radius:6px;"><div class="text-muted">Allowed radius</div><div style="font-weight:700;">${s.radius}m</div></div>
+    </div>
+    ${!GPS.real ? '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:8px 12px;margin-top:10px;font-size:12px;color:#92400e;">⚠ Demo mode: GPS permission denied or unavailable. Actual GPS will be used when permission is granted.</div>' : ''}`;
+
+  if (geoBox) geoBox.innerHTML = inZone
+    ? `<div class="geo-status geo-ok">✓ Within geo-fence — ${Math.round(d)}m from ${s.addr}</div>`
+    : `<div class="geo-status geo-err">✗ Outside allowed radius — you are ${Math.round(d)}m away (limit: ${s.radius}m). Please be at the office premises to mark attendance.</div>`;
+
+  if (punchBtn) {
+    const today = todayStr();
+    const rec = ga().find(a => a.empId === (CU.employeeId||CU.id) && a.date === today);
+    const done = rec?.checkIn && rec?.checkOut;
+    punchBtn.disabled = done || !inZone;
+  }
+}
+
+async function doPunch() {
+  if (!GPS) { toast('Waiting for GPS signal…', 'error'); return; }
+  const s = gs();
+  const d = dist(GPS.lat, GPS.lng, s.lat, s.lng);
+  if (d > s.radius) { toast('You are outside the allowed geo-fence area', 'error'); return; }
+  const now = new Date(), today = todayStr();
+  const timeStr = pad(now.getHours()) + ':' + pad(now.getMinutes());
+  const empId = CU.employeeId || CU.id;
+
+  let rec = ga().find(a => a.empId === empId && a.date === today);
+
+  try {
+    const { db, doc, setDoc, addDoc, collection } = window._fb;
+    if (!rec) {
+      const [sh, sm] = s.shiftStart.split(':').map(Number);
+      const lateBy = (now.getHours()*60 + now.getMinutes()) - (sh*60 + sm);
+      const status = lateBy > (s.lateThreshold||15) ? 'late' : 'present';
+      const newRec = {
+        empId, date: today, checkIn: timeStr, checkOut: null,
+        checkInLat: GPS.lat, checkInLng: GPS.lng, checkOutLat: null, checkOutLng: null,
+        hoursWorked: 0, overtime: 0, status, address: s.addr, manual: false
+      };
+      const ref = await addDoc(collection(db, 'attendance'), newRec);
+      _attendance.push({ firestoreId: ref.id, ...newRec });
+      toast('Checked in at ' + timeStr + (status === 'late' ? ' (Late arrival)' : ''), 'success');
+    } else if (!rec.checkOut) {
+      const [ih, im] = rec.checkIn.split(':').map(Number);
+      const hw = (now.getHours()*60 + now.getMinutes() - (ih*60+im)) / 60;
+      const [eh, em] = s.shiftEnd.split(':').map(Number);
+      const [ssh, ssm] = s.shiftStart.split(':').map(Number);
+      const stdHrs = (eh*60+em-(ssh*60+ssm)) / 60;
+      const ot = Math.max(0, hw - stdHrs);
+      const updates = {
+        checkOut: timeStr, checkOutLat: GPS.lat, checkOutLng: GPS.lng,
+        hoursWorked: parseFloat(hw.toFixed(2)), overtime: parseFloat(ot.toFixed(2))
+      };
+      if (rec.firestoreId) {
+        await setDoc(doc(db, 'attendance', rec.firestoreId), updates, { merge: true });
+      }
+      _attendance = _attendance.map(a => a.firestoreId === rec.firestoreId ? { ...a, ...updates } : a);
+      toast(`Checked out at ${timeStr} · ${hw.toFixed(1)}h worked · OT: ${ot.toFixed(1)}h`, 'success');
+    }
+    const updated = ga().find(a => a.empId === empId && a.date === today);
+    updatePunchBtn(updated);
+    updateGPSUI();
+    loadAttHistory();
+  } catch(e) {
+    toast('Punch failed: ' + e.message, 'error');
+  }
+}
+
+function updatePunchBtn(rec) {
+  const btn = document.getElementById('punchBtn');
+  const lbl = document.getElementById('punchLabel');
+  const info = document.getElementById('lastPunchInfo');
+  if (!btn) return;
+  if (rec?.checkIn && rec?.checkOut) {
+    btn.className = 'punch-btn pb-done'; btn.disabled = true;
+    if (lbl) lbl.textContent = 'Done';
+    if (info) info.textContent = `✓ ${rec.checkIn} → ${rec.checkOut} · ${rec.hoursWorked}h worked`;
+  } else if (rec?.checkIn) {
+    btn.className = 'punch-btn pb-out';
+    if (lbl) lbl.textContent = 'Check Out';
+    if (info) info.textContent = `Checked in at ${rec.checkIn}`;
+  } else {
+    btn.className = 'punch-btn pb-in';
+    if (lbl) lbl.textContent = 'Check In';
+    if (info) info.textContent = '';
+  }
+}
+
+function loadAttHistory() {
+  const empId = CU.employeeId || CU.id;
+  const att = ga().filter(a => a.empId === empId).sort((a,b) => b.date.localeCompare(a.date)).slice(0, 20);
+  document.getElementById('attHistTbody').innerHTML = att.map(a => `
+    <tr>
+      <td>${new Date(a.date+'T12:00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}</td>
+      <td>${a.checkIn||'—'}</td><td>${a.checkOut||'—'}</td>
+      <td>${a.hoursWorked||0}h</td>
+      <td>${(a.overtime||0)>0?`<span style="color:var(--blue);font-weight:700;">+${a.overtime}h</span>`:'—'}</td>
+      <td><span class="badge ${a.status==='present'?'bg-green':a.status==='late'?'bg-amber':'bg-red'}">${a.status}${a.manual?' <span title="Admin entry" style="opacity:.6">✎</span>':''}</span></td>
+    </tr>`).join('');
+}
+
+// ═══════════════════════════════════════════════
+//  MANUAL ATTENDANCE (Admin override)
+// ═══════════════════════════════════════════════
+function openManualAttModal() {
+  const emps = ge().filter(e => e.status === 'active');
+  document.getElementById('maEmpSel').innerHTML = emps.map(e =>
+    `<option value="${e.employeeId||e.id}">${e.name} (${e.employeeId||e.id})</option>`).join('');
+  document.getElementById('maDate').value = document.getElementById('attAdminDate').value || todayStr();
+  document.getElementById('maIn').value = '';
+  document.getElementById('maOut').value = '';
+  document.getElementById('maNote').value = '';
+  document.getElementById('manualAttModal').classList.add('open');
+}
+
+async function saveManualAtt() {
+  const empId   = document.getElementById('maEmpSel').value;
+  const date    = document.getElementById('maDate').value;
+  const checkIn = document.getElementById('maIn').value;
+  const checkOut= document.getElementById('maOut').value;
+  const note    = document.getElementById('maNote').value;
+  if (!empId || !date || !checkIn) { toast('Employee, date and check-in time are required', 'error'); return; }
+
+  const s = gs();
+  const [sh, sm] = s.shiftStart.split(':').map(Number);
+  const [ih, im] = checkIn.split(':').map(Number);
+  const lateBy = (ih*60+im) - (sh*60+sm);
+  const status = lateBy > (s.lateThreshold||15) ? 'late' : 'present';
+
+  let hw = 0, ot = 0;
+  if (checkOut) {
+    const [oh, om] = checkOut.split(':').map(Number);
+    hw = ((oh*60+om) - (ih*60+im)) / 60;
+    const [eh, em] = s.shiftEnd.split(':').map(Number);
+    const [ssh2, ssm2] = s.shiftStart.split(':').map(Number);
+    const stdHrs = (eh*60+em-(ssh2*60+ssm2))/60;
+    ot = Math.max(0, hw - stdHrs);
+  }
+
+  const rec = {
+    empId, date, checkIn, checkOut: checkOut||null,
+    checkInLat: s.lat, checkInLng: s.lng, checkOutLat: checkOut?s.lat:null, checkOutLng: checkOut?s.lng:null,
+    hoursWorked: parseFloat(hw.toFixed(2)), overtime: parseFloat(ot.toFixed(2)),
+    status, address: s.addr, manual: true, manualNote: note,
+    addedBy: CU.name, addedAt: new Date().toISOString()
+  };
+
+  try {
+    const { db, addDoc, collection } = window._fb;
+    const ref = await addDoc(collection(db, 'attendance'), rec);
+    _attendance.push({ firestoreId: ref.id, ...rec });
+    closeModal('manualAttModal');
+    loadAdminAtt();
+    toast('Manual attendance entry saved', 'success');
+  } catch(e) {
+    toast('Save failed: ' + e.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  ADMIN ATTENDANCE
+// ═══════════════════════════════════════════════
+function loadAdminAtt() {
+  const date  = document.getElementById('attAdminDate').value || todayStr();
+  const att   = ga().filter(a => a.date === date);
+  const emps  = ge().filter(e => e.status === 'active');
+  const present = att.filter(a => a.checkIn);
+  const late    = att.filter(a => a.status === 'late');
+  const absent  = emps.filter(e => !att.find(a => a.empId === (e.employeeId||e.id)));
+  const pct     = emps.length ? Math.round(present.length / emps.length * 100) : 0;
+
+  document.getElementById('attAdminStats').innerHTML = `
+    <div class="stat-card"><div class="stat-label"><span class="stat-dot sd-green"></span>Present</div><div class="stat-value sv-green">${present.length}</div></div>
+    <div class="stat-card"><div class="stat-label"><span class="stat-dot sd-red"></span>Absent</div><div class="stat-value sv-red">${absent.length}</div></div>
+    <div class="stat-card"><div class="stat-label"><span class="stat-dot sd-amber"></span>Late Arrivals</div><div class="stat-value sv-amber">${late.length}</div></div>
+    <div class="stat-card"><div class="stat-label"><span class="stat-dot sd-blue"></span>Attendance Rate</div><div class="stat-value sv-blue">${pct}%</div></div>`;
+
+  document.getElementById('attAdminTbody').innerHTML = emps.map(emp => {
+    const eid = emp.employeeId || emp.id;
+    const rec = att.find(a => a.empId === eid);
+    const st  = rec ? (rec.status === 'late' ? 'bg-amber' : 'bg-green') : 'bg-red';
+    const stL = rec ? (rec.status === 'late' ? 'Late' : 'Present') : 'Absent';
+    const locStr = rec?.checkInLat ? `${rec.checkInLat.toFixed(4)},${rec.checkInLng.toFixed(4)}` : '—';
+    const manualTag = rec?.manual ? ' <span style="font-size:10px;opacity:.6;" title="Manual entry">✎</span>' : '';
+    return `<tr>
+      <td><div class="flex"><div class="emp-avatar" style="width:30px;height:30px;font-size:10px;background:${emp.color||'#2563EB'}">${initials(emp.name)}</div>
+        <div><div style="font-weight:700;font-size:13px;">${emp.name}</div><div class="text-muted">${eid}</div></div></div></td>
+      <td>${emp.dept}</td>
+      <td>${rec?.checkIn||'—'}</td><td>${rec?.checkOut||'—'}</td>
+      <td style="font-size:11px;color:var(--text-light);max-width:130px;overflow:hidden;text-overflow:ellipsis;">${locStr}</td>
+      <td>${rec ? (rec.hoursWorked||0)+'h' : '—'}</td>
+      <td>${(rec?.overtime||0)>0?`<span style="color:var(--blue);font-weight:700;">${rec.overtime}h</span>`:'—'}</td>
+      <td><span class="badge ${st}">${stL}${manualTag}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function exportAttCSV() {
+  const date = document.getElementById('attAdminDate').value || todayStr();
+  const att  = ga().filter(a => a.date === date);
+  const emps = ge();
+  let rows   = [['Employee ID','Name','Department','Date','Check In','Check Out','Location (Lat,Lng)','Hours Worked','Overtime','Status','Manual Entry']];
+  emps.filter(e => e.status === 'active').forEach(emp => {
+    const eid = emp.employeeId || emp.id;
+    const rec = att.find(a => a.empId === eid);
+    const loc = rec?.checkInLat ? `${rec.checkInLat},${rec.checkInLng}` : '';
+    rows.push([eid, emp.name, emp.dept, date, rec?.checkIn||'Absent', rec?.checkOut||'', loc, rec?.hoursWorked||0, rec?.overtime||0, rec?.status||'absent', rec?.manual?'Yes':'No']);
+  });
+  downloadCSV(rows, `attendance_${date}.csv`);
+  toast('Attendance CSV exported', 'success');
+}
+
+// ═══════════════════════════════════════════════
+//  PAYROLL
+// ═══════════════════════════════════════════════
+function buildPayrollMonths() {
+  const sel = document.getElementById('payrollMonth');
+  if (!sel) return;
+  const now = new Date(); sel.innerHTML = '';
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    const v = d.getFullYear() + '-' + pad(d.getMonth()+1);
+    sel.innerHTML += `<option value="${v}">${d.toLocaleDateString('en-IN',{month:'long',year:'numeric'})}</option>`;
+  }
+}
+
+function calcPayroll(empId, month) {
+  const emp = ge().find(e => (e.employeeId||e.id) === empId); if (!emp) return null;
+  const att  = ga().filter(a => a.empId === empId && a.date.startsWith(month));
+  const adv  = gadv().filter(a => a.empId === empId && a.month === month);
+  const s    = gs();
+
+  // Derive hourly rate from per-day rate ÷ shift hours
+  const [sh, sm] = s.shiftStart.split(':').map(Number);
+  const [eh, em] = s.shiftEnd.split(':').map(Number);
+  const shiftHours = Math.max(1, (eh*60+em - (sh*60+sm)) / 60);
+  const perDay     = emp.salary;       // per-day rate
+  const hourlyRate = perDay / shiftHours;
+
+  const days    = att.filter(a => a.checkIn).length;
+  // Base = sum of actual hoursWorked × hourlyRate (capped at shiftHours per day for base)
+  const totalHours = att.reduce((sum,a) => {
+    // Only count regular hours (up to shiftHours); OT is separate
+    const hw = a.hoursWorked || 0;
+    return sum + Math.min(hw, shiftHours);
+  }, 0);
+  const base = parseFloat((totalHours * hourlyRate).toFixed(2));
+
+  const totalOT  = att.reduce((sum,a) => sum+(a.overtime||0), 0);
+  const otEarn   = parseFloat((totalOT * emp.otRate).toFixed(2));
+  const advTotal = adv.reduce((sum,a) => sum+a.amount, 0);
+  const deductions = 0;
+  const net = parseFloat((base + otEarn - advTotal - deductions).toFixed(2));
+  const payData = gpay();
+  const status = (payData[month] && payData[month][empId]) || 'pending';
+  return { emp, days, totalOT, otEarn, advTotal, base, deductions, net, status, perDay, totalHours: parseFloat(totalHours.toFixed(2)), hourlyRate: parseFloat(hourlyRate.toFixed(2)), shiftHours };
+}
+
+function loadPayroll() {
+  const month = document.getElementById('payrollMonth')?.value || monthStr();
+  const emps  = ge().filter(e => e.status === 'active');
+  document.getElementById('payrollTbody').innerHTML = emps.map(emp => {
+    const eid = emp.employeeId || emp.id;
+    const p = calcPayroll(eid, month); if (!p) return '';
+    const stBadge = p.status === 'paid' ? '<span class="badge bg-green">Paid</span>' : '<span class="badge bg-amber">Pending</span>';
+    return `<tr>
+      <td><div class="flex"><div class="emp-avatar" style="width:28px;height:28px;font-size:10px;background:${emp.color||'#2563EB'}">${initials(emp.name)}</div>
+        <span style="font-weight:700;">${emp.name}</span></div></td>
+      <td style="min-width:150px;">${p.days}d · ${p.totalHours}h <span style='font-size:10px;color:var(--text-light);'>(₹${p.hourlyRate.toFixed(0)}/hr)</span></td>
+      <td>₹${fmt(Math.round(p.base))}</td>
+      <td style="color:var(--success);font-weight:700;">+₹${fmt(Math.round(p.otEarn))}</td>
+      <td style="color:var(--danger);">−₹${fmt(p.advTotal)}</td>
+      <td style="color:var(--danger);">−₹${fmt(p.deductions)}</td>
+      <td style="font-weight:800;color:var(--blue);">₹${fmt(Math.round(p.net))}</td>
+      <td>${stBadge}</td>
+      <td><div class="flex">
+        <button class="btn btn-ghost btn-sm" onclick="showSlip('${eid}','${month}')">Slip</button>
+        ${p.status !== 'paid' ? `<button class="btn btn-success btn-sm" onclick="markPaid('${eid}','${month}')">Pay</button>` : ''}
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+async function markPaid(empId, month) {
+  const pay = gpay();
+  if (!pay[month]) pay[month] = {};
+  pay[month][empId] = 'paid';
+  _payroll = pay;
+  try {
+    const { db, doc, setDoc } = window._fb;
+    await setDoc(doc(db, 'payroll', month), pay[month]);
+  } catch(e) { console.warn('Payroll sync error', e); }
+  loadPayroll();
+  const emp = ge().find(e => (e.employeeId||e.id) === empId);
+  toast(`${emp?.name||empId} marked as paid`, 'success');
+}
+
+async function processAllPayroll() {
+  const month = document.getElementById('payrollMonth')?.value || monthStr();
+  const emps  = ge().filter(e => e.status === 'active');
+  const pay   = gpay(); if (!pay[month]) pay[month] = {};
+  emps.forEach(e => { pay[month][e.employeeId||e.id] = 'paid'; });
+  _payroll = pay;
+  try {
+    const { db, doc, setDoc } = window._fb;
+    await setDoc(doc(db, 'payroll', month), pay[month]);
+  } catch(e) { console.warn('Payroll sync error', e); }
+  loadPayroll();
+  toast('All employees marked as paid for this month', 'success');
+}
+
+function exportPayrollCSV() {
+  const month = document.getElementById('payrollMonth')?.value || monthStr();
+  const emps  = ge().filter(e => e.status === 'active');
+  let rows    = [['Employee ID','Name','Department','Days Worked','Base Pay','OT Hours','OT Earnings','Advances','Deductions','Net Pay','Status']];
+  emps.forEach(emp => {
+    const eid = emp.employeeId || emp.id;
+    const p   = calcPayroll(eid, month); if (!p) return;
+    rows.push([eid, emp.name, emp.dept, p.days, Math.round(p.base), p.totalOT.toFixed(1), Math.round(p.otEarn), p.advTotal, p.deductions, Math.round(p.net), p.status]);
+  });
+  downloadCSV(rows, `payroll_${month}.csv`);
+  toast('Payroll CSV exported', 'success');
+}
+
+function showSlip(empId, month) {
+  const p = calcPayroll(empId, month); if (!p) return;
+  const monthLabel = new Date(month+'-01').toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+  const s = gs();
+  document.getElementById('slipBody').innerHTML = `
+    <div class="slip-header">
+      <div style="font-size:20px;font-weight:900;margin-bottom:3px;">SSK Engineering — Salary Slip</div>
+      <div style="font-size:13px;opacity:.85;">${monthLabel} · Generated ${new Date().toLocaleDateString('en-IN')}</div>
+    </div>
+    <div class="slip-grid" style="margin-bottom:16px;">
+      <div class="slip-item"><div class="slip-lbl">Employee Name</div><div class="slip-val">${p.emp.name}</div></div>
+      <div class="slip-item"><div class="slip-lbl">Employee ID</div><div class="slip-val">${p.emp.employeeId||p.emp.id}</div></div>
+      <div class="slip-item"><div class="slip-lbl">Department</div><div class="slip-val">${p.emp.dept}</div></div>
+      <div class="slip-item"><div class="slip-lbl">Phone</div><div class="slip-val">${p.emp.phone||'—'}</div></div>
+      <div class="slip-item"><div class="slip-lbl">Days Worked</div><div class="slip-val">${p.days} / ${s.workDays}</div></div>
+      <div class="slip-item"><div class="slip-lbl">OT Hours</div><div class="slip-val">${p.totalOT.toFixed(1)} hrs</div></div>
+    </div>
+    <div class="pay-calc">
+      <div class="pay-row"><span>Per Day Rate</span><span style="font-weight:700;">₹${fmt(p.emp.salary)}/day (₹${p.hourlyRate.toFixed(0)}/hr)</span></div>
+      <div class="pay-row"><span>Regular Hours Worked (${p.totalHours}h)</span><span style="font-weight:700;">₹${fmt(Math.round(p.base))}</span></div>
+      <div class="pay-row"><span>Overtime (${p.totalOT.toFixed(1)}h × ₹${p.emp.otRate}/hr)</span><span style="color:var(--success);font-weight:700;">+₹${fmt(Math.round(p.otEarn))}</span></div>
+      <div class="pay-row pay-ded"><span>Advance Deduction</span><span>−₹${fmt(p.advTotal)}</span></div>
+      <div class="pay-row pay-ded"><span>Other Deductions</span><span>−₹0</span></div>
+      <div class="pay-row pay-total"><span>Net Payable Amount</span><span>₹${fmt(Math.round(p.net))}</span></div>
+    </div>
+    <div style="margin-top:16px;font-size:11.5px;color:var(--text-light);border:1px dashed #e2e8f0;border-radius:6px;padding:10px;">
+      <strong>Note:</strong> Computer-generated salary slip. For queries contact HR/Admin. · ${s.addr}
+    </div>`;
+  document.getElementById('slipModal').classList.add('open');
+}
+
+function printSlip() {
+  const content = document.getElementById('slipBody').innerHTML;
+  const w = window.open('', '_blank', 'width=700,height=800');
+  w.document.write(`<!DOCTYPE html><html><head><title>Salary Slip</title>
+  <style>body{font-family:'Segoe UI',sans-serif;padding:30px;color:#0f172a;}
+  .slip-header{background:linear-gradient(135deg,#2563EB,#1d4ed8);color:white;padding:22px;border-radius:8px 8px 0 0;margin-bottom:18px;}
+  .slip-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;}
+  .slip-item{padding:9px 12px;background:#f8faff;border-radius:6px;}
+  .slip-lbl{font-size:10.5px;color:#94a3b8;margin-bottom:2px;font-weight:600;}
+  .slip-val{font-size:13.5px;font-weight:700;color:#1e293b;}
+  .pay-calc{background:#f8faff;border:1px solid rgba(37,99,235,.1);border-radius:8px;padding:15px;}
+  .pay-row{display:flex;justify-content:space-between;font-size:13.5px;padding:6px 0;border-bottom:1px dashed rgba(37,99,235,.1);}
+  .pay-row:last-child{border:none;} .pay-total{font-weight:800;font-size:15px;color:#2563EB;border-top:2px solid #2563EB;margin-top:5px;padding-top:9px;} .pay-ded{color:#ef4444;}
+  @media print{button{display:none;}}</style>
+  </head><body>${content}<br><button onclick="window.print();window.close();" style="padding:10px 20px;background:#2563EB;color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:700;">🖨 Print Now</button></body></html>`);
+  w.document.close();
+}
+
+// ═══════════════════════════════════════════════
+//  ADVANCES
+// ═══════════════════════════════════════════════
+async function loadAdvances() {
+  const adv  = gadv(), emps = ge();
+  document.getElementById('advTbody').innerHTML = adv.length ? adv.map(a => {
+    const emp = emps.find(e => (e.employeeId||e.id) === a.empId);
+    return `<tr>
+      <td style="font-weight:700;">${emp?.name||a.empId}</td>
+      <td style="color:var(--danger);font-weight:800;">₹${fmt(a.amount)}</td>
+      <td>${a.date}</td><td>${a.reason||'—'}</td>
+      <td>${new Date(a.month+'-01').toLocaleDateString('en-IN',{month:'short',year:'numeric'})}</td>
+      <td><span class="badge bg-amber">Pending deduction</span></td>
+      <td><button class="btn btn-sm" style="background:#fee2e2;color:var(--danger);" onclick="deleteAdvance('${a.firestoreId||a.id}')">Delete</button></td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="7" style="text-align:center;padding:28px;color:var(--text-light);">No advance records found.</td></tr>';
+}
+
+async function deleteAdvance(fid) {
+  if (!confirm('Delete this advance record?')) return;
+  try {
+    const { db, doc, deleteDoc } = window._fb;
+    await deleteDoc(doc(db, 'advances', fid));
+    _advances = _advances.filter(a => (a.firestoreId||a.id) !== fid);
+    loadAdvances();
+    toast('Advance deleted', 'info');
+  } catch(e) { toast('Delete failed: '+e.message,'error'); }
+}
+
+function openAdvModal() {
+  const emps = ge().filter(e => e.status === 'active');
+  document.getElementById('advEmpSel').innerHTML = emps.map(e =>
+    `<option value="${e.employeeId||e.id}">${e.name} (${e.employeeId||e.id})</option>`).join('');
+  const sel = document.getElementById('advMonth'); sel.innerHTML = '';
+  const now = new Date();
+  for (let i = -1; i < 4; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth()+i, 1);
+    const v = d.getFullYear() + '-' + pad(d.getMonth()+1);
+    sel.innerHTML += `<option value="${v}" ${i===0?'selected':''}>${d.toLocaleDateString('en-IN',{month:'long',year:'numeric'})}</option>`;
+  }
+  document.getElementById('advAmt').value = '';
+  document.getElementById('advReason').value = '';
+  document.getElementById('advModal').classList.add('open');
+}
+
+async function saveAdvance() {
+  const empId  = document.getElementById('advEmpSel').value;
+  const amount = parseFloat(document.getElementById('advAmt').value) || 0;
+  const month  = document.getElementById('advMonth').value;
+  const reason = document.getElementById('advReason').value;
+  if (!amount || amount <= 0) { toast('Enter a valid amount', 'error'); return; }
+  const rec = { empId, amount, date: todayStr(), reason, month, status: 'pending', createdAt: new Date().toISOString() };
+  try {
+    const { db, addDoc, collection } = window._fb;
+    const ref = await addDoc(collection(db, 'advances'), rec);
+    _advances.push({ firestoreId: ref.id, ...rec });
+    closeModal('advModal');
+    loadAdvances();
+    toast('Advance of ₹' + fmt(amount) + ' recorded', 'success');
+  } catch(e) { toast('Save failed: '+e.message,'error'); }
+}
+
+// ═══════════════════════════════════════════════
+//  REPORTS
+// ═══════════════════════════════════════════════
+function showReport(type, el) {
+  if (el) {
+    document.querySelectorAll('#reportTabs .chip').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+  } else {
+    const first = document.querySelector('#reportTabs .chip');
+    if (first) first.classList.add('active');
+  }
+  const cont  = document.getElementById('reportContent');
+  const month = monthStr();
+  const emps  = ge().filter(e => e.status === 'active');
+  const att   = ga().filter(a => a.date.startsWith(month));
+  const s     = gs();
+
+  if (type === 'attendance') {
+    let rows = [['Employee ID','Name','Department','Present Days','Absent Days','Late Days','Total Hours','OT Hours','Attendance %']];
+    let html = `<div class="glass-card overflow-card"><div class="card-header">
+      <span class="card-title">Monthly Attendance — ${new Date(month+'-01').toLocaleDateString('en-IN',{month:'long',year:'numeric'})}</span>
+      <div class="flex"><span style="font-size:12px;color:var(--text-light);margin-right:6px;">Click employee to view calendar</span><button class="btn btn-ghost btn-sm" onclick="exportReportCSV('attendance')">Export CSV</button></div>
+    </div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Dept</th><th>Present</th><th>Absent</th><th>Late</th><th>Total Hrs</th><th>OT Hrs</th><th>Att %</th></tr></thead><tbody>`;
+    emps.forEach(emp => {
+      const eid = emp.employeeId || emp.id;
+      const ea  = att.filter(a => a.empId === eid);
+      const present = ea.filter(a => a.checkIn).length;
+      const late    = ea.filter(a => a.status === 'late').length;
+      const absent  = s.workDays - present;
+      const hrs     = ea.reduce((sum,a) => sum+(a.hoursWorked||0), 0);
+      const ot      = ea.reduce((sum,a) => sum+(a.overtime||0), 0);
+      const pct     = Math.round(present/s.workDays*100);
+      rows.push([eid, emp.name, emp.dept, present, absent, late, hrs.toFixed(1), ot.toFixed(1), pct+'%']);
+      html += `<tr class="emp-report-row" onclick="showEmpCalendar('${eid}','${month}')" title="Click to view attendance calendar">
+        <td><div class="flex"><div class="emp-avatar" style="width:28px;height:28px;font-size:10px;background:${emp.color||'#2563EB'}">${initials(emp.name)}</div>
+        <span style="font-weight:700;">${emp.name}</span><span style="font-size:10px;color:var(--blue);margin-left:4px;">📅</span></div></td>
+        <td>${emp.dept}</td><td style="color:var(--success);font-weight:700;">${present}</td>
+        <td style="color:var(--danger);">${absent}</td><td style="color:var(--warning);">${late}</td>
+        <td>${hrs.toFixed(1)}h</td><td style="color:var(--blue);font-weight:700;">${ot.toFixed(1)}h</td>
+        <td><div class="flex" style="gap:6px;"><div class="progress-bar" style="width:60px;"><div class="progress-fill" style="width:${pct}%"></div></div>${pct}%</div></td></tr>`;
+    });
+    html += '</tbody></table></div></div>';
+    cont.innerHTML = html;
+    window._reportData = { type:'attendance', rows };
+
+  } else if (type === 'payroll') {
+    const adv = gadv().filter(a => a.month === month);
+    let rows  = [['Employee ID','Name','Department','Days','Hours','Base Pay','OT Hours','OT Earn','Advances','Net Pay','Status']];
+    let html  = `<div class="glass-card overflow-card"><div class="card-header">
+      <span class="card-title">Payroll Report — ${new Date(month+'-01').toLocaleDateString('en-IN',{month:'long',year:'numeric'})}</span>
+      <button class="btn btn-ghost btn-sm" onclick="exportReportCSV('payroll')">Export CSV</button>
+    </div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Dept</th><th>Days / Hrs</th><th>Base Pay</th><th>OT Earn</th><th>Advances</th><th>Net Pay</th><th>Status</th></tr></thead><tbody>`;
+    let grandTotal = 0;
+    emps.forEach(emp => {
+      const eid = emp.employeeId || emp.id;
+      const p   = calcPayroll(eid, month); if (!p) return;
+      grandTotal += p.net;
+      rows.push([eid, emp.name, emp.dept, p.days, p.totalHours, Math.round(p.base), p.totalOT.toFixed(1), Math.round(p.otEarn), p.advTotal, Math.round(p.net), p.status]);
+      html += `<tr><td><div class="flex"><div class="emp-avatar" style="width:28px;height:28px;font-size:10px;background:${emp.color||'#2563EB'}">${initials(emp.name)}</div><span style="font-weight:700;">${emp.name}</span></div></td>
+        <td>${emp.dept}</td><td>${p.days}d · ${p.totalHours}h</td>
+        <td>₹${fmt(Math.round(p.base))}</td>
+        <td style="color:var(--success);">+₹${fmt(Math.round(p.otEarn))}</td>
+        <td style="color:var(--danger);">−₹${fmt(p.advTotal)}</td>
+        <td style="font-weight:800;color:var(--blue);">₹${fmt(Math.round(p.net))}</td>
+        <td><span class="badge ${p.status==='paid'?'bg-green':'bg-amber'}">${p.status}</span></td></tr>`;
+    });
+    html += `<tr style="background:#f0f9ff;"><td colspan="6" style="font-weight:800;text-align:right;padding:12px 13px;">Total Payroll</td>
+      <td style="font-weight:900;color:var(--blue);font-size:15px;padding:12px 13px;">₹${fmt(Math.round(grandTotal))}</td><td></td></tr>`;
+    html += '</tbody></table></div></div>';
+    cont.innerHTML = html;
+    window._reportData = { type:'payroll', rows };
+
+  } else {
+    let html = '<div class="grid-2" style="gap:14px;">';
+    emps.forEach(emp => {
+      const eid = emp.employeeId || emp.id;
+      const ea  = att.filter(a => a.empId === eid);
+      const present = ea.filter(a => a.checkIn).length;
+      const ot  = ea.reduce((sum,a) => sum+(a.overtime||0), 0);
+      const pct = Math.round(present/s.workDays*100);
+      html += `<div class="glass-card" style="padding:16px;cursor:pointer;" onclick="showEmpCalendar('${eid}','${month}')" title="Click to view attendance calendar">
+        <div class="flex" style="margin-bottom:12px;">
+          <div class="emp-avatar" style="background:${emp.color||'#2563EB'}">${initials(emp.name)}</div>
+          <div><div style="font-weight:800;font-size:13.5px;">${emp.name} <span style="font-size:10px;color:var(--blue);">📅</span></div><div class="text-muted">${emp.dept} · ${eid}</div></div>
+          <span class="badge ${emp.status==='active'?'bg-green':'bg-slate'}" style="margin-left:auto;">${emp.status}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center;">
+          <div style="background:#f8faff;border-radius:6px;padding:8px;"><div class="text-muted">Present</div><div style="font-size:20px;font-weight:800;color:var(--success);">${present}</div></div>
+          <div style="background:#f8faff;border-radius:6px;padding:8px;"><div class="text-muted">OT Hrs</div><div style="font-size:20px;font-weight:800;color:var(--blue);">${ot.toFixed(1)}</div></div>
+          <div style="background:#f8faff;border-radius:6px;padding:8px;"><div class="text-muted">Att %</div><div style="font-size:20px;font-weight:800;color:var(--cyan);">${pct}%</div></div>
+        </div>
+        <div class="progress-bar mt-16"><div class="progress-fill" style="width:${pct}%"></div></div>
+      </div>`;
+    });
+    html += '</div>';
+    cont.innerHTML = html;
+  }
+}
+
+// ─── ATTENDANCE CALENDAR ────────────────────────────────────────
+function showEmpCalendar(empId, month) {
+  const emp  = ge().find(e => (e.employeeId||e.id) === empId);
+  if (!emp) return;
+  const att  = ga().filter(a => a.empId === empId && a.date.startsWith(month));
+  const cont = document.getElementById('reportContent');
+  const today = todayStr();
+
+  // Build a lookup: date → status
+  const attMap = {};
+  att.forEach(a => { if (a.date) attMap[a.date] = a; });
+
+  const [yr, mo] = month.split('-').map(Number);
+  const firstDay  = new Date(yr, mo-1, 1).getDay(); // 0=Sun
+  const daysInMonth = new Date(yr, mo, 0).getDate();
+  const monthLabel  = new Date(yr, mo-1, 1).toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+
+  const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let calHtml = '<div class="cal-grid">';
+  DAYS.forEach(d => { calHtml += `<div class="cal-day-hdr">${d}</div>`; });
+
+  // Empty cells before first day
+  for (let i = 0; i < firstDay; i++) calHtml += '<div class="cal-day empty"></div>';
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${yr}-${pad(mo)}-${pad(d)}`;
+    const rec = attMap[dateStr];
+    const isFuture = dateStr > today;
+    const isToday  = dateStr === today;
+    let cls = 'cal-day';
+    let tip = '';
+    if (isFuture) {
+      cls += ' future';
+      tip = dateStr;
+    } else if (rec && rec.checkIn) {
+      cls += rec.status === 'late' ? ' late' : ' present';
+      tip = `${dateStr}: ${rec.status} · ${rec.checkIn}${rec.checkOut?' → '+rec.checkOut:''} · ${rec.hoursWorked||0}h`;
+    } else {
+      cls += ' absent';
+      tip = `${dateStr}: Absent`;
+    }
+    if (isToday) cls += ' today-marker';
+    calHtml += `<div class="${cls}" title="${tip}">${d}</div>`;
+  }
+  calHtml += '</div>';
+
+  // Summary stats
+  const presentDays = att.filter(a => a.checkIn && a.status !== 'late').length;
+  const lateDays    = att.filter(a => a.status === 'late').length;
+  const totalPresent = presentDays + lateDays;
+  const totalHrs = att.reduce((s,a)=>s+(a.hoursWorked||0),0);
+
+  cont.innerHTML = `
+    <div class="glass-card">
+      <div style="padding:16px 20px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <div>
+          <button class="cal-back-btn" onclick="showReport('attendance')">← Back to Report</button>
+          <div style="font-size:16px;font-weight:800;color:var(--slate);">
+            <span style="display:inline-flex;align-items:center;gap:8px;">
+              <span class="emp-avatar" style="background:${emp.color||'#2563EB'};width:32px;height:32px;font-size:12px;">${initials(emp.name)}</span>
+              ${emp.name}
+            </span>
+          </div>
+          <div class="text-muted" style="margin-top:3px;">${emp.dept} · ${monthLabel}</div>
+        </div>
+        <div style="display:flex;gap:16px;font-size:12.5px;font-weight:600;flex-wrap:wrap;">
+          <span style="color:var(--success);">● Present: ${presentDays}</span>
+          <span style="color:var(--warning);">● Late: ${lateDays}</span>
+          <span style="color:var(--danger);">● Absent: ${daysInMonth - totalPresent}</span>
+          <span style="color:var(--blue);">● Hours: ${totalHrs.toFixed(1)}h</span>
+        </div>
+      </div>
+      <div class="att-calendar-wrap">
+        <div class="att-cal-legend" style="margin-bottom:14px;">
+          <span><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#dcfce7;"></span> Present</span>
+          <span><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#fef3c7;"></span> Late</span>
+          <span><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#fee2e2;"></span> Absent</span>
+          <span><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#f1f5f9;"></span> Future</span>
+        </div>
+        ${calHtml}
+      </div>
+    </div>`;
+}
+
+function exportReportCSV(type) {
+  if (!window._reportData) { toast('Generate a report first', 'error'); return; }
+  const d = window._reportData;
+  downloadCSV(d.rows, `ssk_${type}_report_${monthStr()}.csv`);
+  toast('Report CSV exported', 'success');
+}
+
+// ═══════════════════════════════════════════════
+//  SETTINGS
+// ═══════════════════════════════════════════════
+function loadSettings() {
+  const s = gs();
+  document.getElementById('sLat').value = s.lat;
+  document.getElementById('sLng').value = s.lng;
+  document.getElementById('sRadius').value = s.radius;
+  document.getElementById('sAddr').value = s.addr;
+  document.getElementById('sShiftStart').value = s.shiftStart;
+  document.getElementById('sShiftEnd').value = s.shiftEnd;
+  document.getElementById('sLate').value = s.lateThreshold;
+  document.getElementById('sWorkDays').value = s.workDays;
+}
+async function saveSettings() {
+  const s = {
+    lat: parseFloat(document.getElementById('sLat').value) || 18.5204,
+    lng: parseFloat(document.getElementById('sLng').value) || 73.8567,
+    radius: parseInt(document.getElementById('sRadius').value) || 100,
+    addr: document.getElementById('sAddr').value || 'SSK Engineering, MIDC Pimpri-Chinchwad, Pune',
+    shiftStart: document.getElementById('sShiftStart').value || '09:00',
+    shiftEnd: document.getElementById('sShiftEnd').value || '17:00',
+    lateThreshold: parseInt(document.getElementById('sLate').value) || 15,
+    workDays: parseInt(document.getElementById('sWorkDays').value) || 26,
+  };
+  await ss(s);
+  toast('Settings saved successfully', 'success');
+}
+
+// ═══════════════════════════════════════════════
+//  EMPLOYEE DASHBOARD
+// ═══════════════════════════════════════════════
+function loadEmpDash() {
+  // Always reload fresh data from Firebase before rendering
+  const empProfile = ge().find(e => (e.employeeId||e.id) === (CU.employeeId||CU.id)) || CU;
+  const emp = { ...CU, ...empProfile };
+  const month = monthStr(), s = gs();
+  const empId = emp.employeeId || emp.id;
+  const att   = ga().filter(a => a.empId === empId && a.date.startsWith(month));
+  const present = att.filter(a => a.checkIn).length;
+  const late    = att.filter(a => a.status === 'late').length;
+  const totalOT = att.reduce((sum,a) => sum+(a.overtime||0), 0);
+
+  // Live advance data
+  const adv     = gadv().filter(a => a.empId === empId && a.month === month);
+  const advTotal = adv.reduce((sum,a) => sum+a.amount, 0);
+
+  // Hourly rate calculation
+  const [sh, sm] = s.shiftStart.split(':').map(Number);
+  const [eh, em] = s.shiftEnd.split(':').map(Number);
+  const shiftHours = Math.max(1, (eh*60+em - (sh*60+sm)) / 60);
+  const perDay   = emp.salary || 0;
+  const hourlyRate = perDay / shiftHours;
+
+  // Base = actual hours worked × hourly rate (regular hours only)
+  const totalHours = att.reduce((sum,a) => {
+    const hw = a.hoursWorked || 0;
+    return sum + Math.min(hw, shiftHours);
+  }, 0);
+  const base    = parseFloat((totalHours * hourlyRate).toFixed(2));
+  const otEarn  = parseFloat((totalOT * (emp.otRate||0)).toFixed(2));
+  const net     = base + otEarn - advTotal;
+  const pct     = Math.round(present / s.workDays * 100);
+
+  document.getElementById('empDashStats').innerHTML = `
+    <div class="stat-card"><div class="stat-label"><span class="stat-dot sd-green"></span>Days Present</div><div class="stat-value sv-green">${present}</div></div>
+    <div class="stat-card"><div class="stat-label"><span class="stat-dot sd-amber"></span>Late Arrivals</div><div class="stat-value sv-amber">${late}</div></div>
+    <div class="stat-card"><div class="stat-label"><span class="stat-dot sd-blue"></span>OT Hours</div><div class="stat-value sv-blue">${totalOT.toFixed(1)}</div></div>
+    <div class="stat-card"><div class="stat-label"><span class="stat-dot sd-blue"></span>Earned This Month</div><div class="stat-value sv-blue">₹${fmt(Math.round(net))}</div></div>`;
+
+  document.getElementById('empPayrollBox').innerHTML = `
+    <div class="pay-calc">
+      <div class="pay-row"><span>Per Day Rate</span><span style="font-weight:700;">₹${fmt(emp.salary||0)}/day · ₹${hourlyRate.toFixed(0)}/hr</span></div>
+      <div class="pay-row"><span>Hours Worked (${totalHours.toFixed(1)}h)</span><span style="font-weight:700;">₹${fmt(Math.round(base))}</span></div>
+      <div class="pay-row"><span>Overtime (${totalOT.toFixed(1)}h × ₹${emp.otRate||0})</span><span style="color:var(--success);font-weight:700;">+₹${fmt(Math.round(otEarn))}</span></div>
+      <div class="pay-row pay-ded"><span>Advances Deducted</span><span>−₹${fmt(advTotal)}</span></div>
+      <div class="pay-row pay-total"><span>Estimated Net Pay</span><span>₹${fmt(Math.round(net))}</span></div>
+    </div>
+    ${adv.length ? `<div style="margin-top:10px;font-size:12px;color:var(--text-light);">${adv.length} advance record(s) totalling ₹${fmt(advTotal)} deducted this month</div>` : ''}`;
+
+  const barSegs = att.map(a => `<div class="${a.status==='present'?'pre-seg':a.status==='late'?'late-seg':'abs-seg'}" title="${a.date}: ${a.status}"></div>`).join('');
+  document.getElementById('empAttBox').innerHTML = `
+    <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:8px;">
+      <span style="color:var(--success);font-weight:600;">● ${present} Present</span>
+      <span style="color:var(--warning);font-weight:600;">● ${late} Late</span>
+      <span style="color:var(--danger);font-weight:600;">● ${s.workDays-present} Absent</span>
+    </div>
+    <div class="att-bar-wrap">${barSegs}</div>
+    <div class="progress-bar mt-16"><div class="progress-fill" style="width:${pct}%"></div></div>
+    <div style="text-align:right;font-size:12px;color:var(--text-light);margin-top:5px;">${pct}% attendance · ${new Date(month+'-01').toLocaleDateString('en-IN',{month:'long',year:'numeric'})}</div>`;
+}
+
+// ═══════════════════════════════════════════════
+//  CSV EXPORT
+// ═══════════════════════════════════════════════
+function downloadCSV(rows, filename) {
+  const csv = rows.map(r => r.map(c => {
+    const v = String(c).replace(/"/g, '""');
+    return v.includes(',') || v.includes('"') || v.includes('\n') ? `"${v}"` : v;
+  }).join(',')).join('\r\n');
+  const blob = new Blob(['\uFEFF'+csv], { type:'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a'); a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+// ═══════════════════════════════════════════════
+//  MODAL HELPERS
+// ═══════════════════════════════════════════════
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-overlay').forEach(m => {
+  m.addEventListener('click', function(e) { if (e.target === this) this.classList.remove('open'); });
+});
+
+// ═══════════════════════════════════════════════
+//  TOAST
+// ═══════════════════════════════════════════════
+function toast(msg, type = 'info') {
+  const wrap = document.getElementById('toastWrap');
+  const t    = document.createElement('div');
+  t.className = `toast ${type}`;
+  const colors = { success:'var(--success)', error:'var(--danger)', info:'var(--blue)' };
+  const icons  = { success:'✓', error:'✕', info:'i' };
+  t.innerHTML = `<div class="toast-icon" style="background:${colors[type]};">${icons[type]}</div><span>${msg}</span>`;
+  wrap.appendChild(t);
+  setTimeout(() => { t.style.transition = 'opacity .3s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 4000);
+}
+
+// ═══════════════════════════════════════════════
+//  OFFLINE DETECTION
+// ═══════════════════════════════════════════════
+window.addEventListener('online',  () => document.getElementById('offlineBanner').classList.remove('show'));
+window.addEventListener('offline', () => document.getElementById('offlineBanner').classList.add('show'));
+
+// ═══════════════════════════════════════════════
+//  RESPONSIVE
+// ═══════════════════════════════════════════════
+function checkMobile() {
+  const mb = document.getElementById('menuBtn');
+  if (mb) mb.style.display = window.innerWidth <= 768 ? 'block' : 'none';
+  if (window.innerWidth > 768) document.getElementById('sidebar')?.classList.remove('open');
+}
+window.addEventListener('resize', checkMobile);
+checkMobile();
+
+// ═══════════════════════════════════════════════
+//  WAIT FOR FIREBASE, THEN INIT
+// ═══════════════════════════════════════════════
+// Loading screen stays visible until Firebase auth state resolves.
+// Firebase module script handles the onAuthStateChanged listener.
+// If Firebase config is not set yet, show a helpful message.
+// Firebase configured and ready.
+</script>
+
+<!-- ════════════ PWA SERVICE WORKER ════════════ -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js');
+    });
+  }
+</script>
+</body>
+</html>
